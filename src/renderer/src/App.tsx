@@ -41,6 +41,7 @@ function formatFrameRate(frameRate: number | null): string {
 
 function App(): React.JSX.Element {
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null)
+  const [thumbnailDataUrl, setThumbnailDataUrl] = useState<string | null>(null)
   const [errorInfo, setErrorInfo] = useState<VideoSelectionError | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
 
@@ -52,6 +53,7 @@ function App(): React.JSX.Element {
 
       if (result.status === 'success') {
         setMetadata(result.metadata)
+        setThumbnailDataUrl(result.thumbnailDataUrl)
         setErrorInfo(null)
       } else if (result.status === 'error') {
         setErrorInfo(result)
@@ -82,6 +84,16 @@ function App(): React.JSX.Element {
           <strong>{errorInfo.title}</strong>
           <p>{errorInfo.message}</p>
           {metadata && <p>当前仍显示上一次成功加载的视频信息。</p>}
+        </section>
+      )}
+
+      {metadata && (
+        <section className="preview" aria-label="视频预览">
+          {thumbnailDataUrl ? (
+            <img src={thumbnailDataUrl} alt={`${metadata.fileName} 的视频预览`} />
+          ) : (
+            <div className="preview-placeholder">无法生成视频预览</div>
+          )}
         </section>
       )}
 

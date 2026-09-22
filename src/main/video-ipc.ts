@@ -1,6 +1,7 @@
 import { dialog, ipcMain } from 'electron'
 import { SELECT_VIDEO_CHANNEL, type VideoSelectionResult } from '../shared/video-metadata'
 import { readVideoMetadata, VideoMetadataError } from './ffprobe'
+import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
 
 function toErrorResult(error: unknown): VideoSelectionResult {
   if (error instanceof VideoMetadataError) {
@@ -22,6 +23,15 @@ function toErrorResult(error: unknown): VideoSelectionResult {
   }
 }
 
+function logThumbnailFailure(error: unknown): void {
+  if (error instanceof ThumbnailGenerationError) {
+    console.warn(`[THUMBNAIL_GENERATION_FAILED] ${error.technicalDetails}`)
+    return
+  }
+
+  console.error('Unexpected error while generating video thumbnail:', error)
+}
+
 export function registerVideoIpcHandlers(): void {
   ipcMain.handle(SELECT_VIDEO_CHANNEL, async (): Promise<VideoSelectionResult> => {
     try {
@@ -41,9 +51,19 @@ export function registerVideoIpcHandlers(): void {
       }
 
       const filePath = selection.filePaths[0]
+      const metadata = await readVideoMetadata(filePath)
+      let thumbnailDataUrl: string | null = null
+
+      try {
+        thumbnailDataUrl = await generateVideoThumbnail(filePath, metadata.duration)
+      } catch (error: unknown) {
+        logThumbnailFailure(error)
+      }
+
       return {
         status: 'success',
-        metadata: await readVideoMetadata(filePath)
+        metadata,
+        thumbnailDataUrl
       }
     } catch (error: unknown) {
       return toErrorResult(error)

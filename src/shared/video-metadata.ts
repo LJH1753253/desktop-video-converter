@@ -27,7 +27,7 @@ export interface VideoSelectionError {
 }
 
 export type VideoSelectionResult =
-  | { status: 'success'; metadata: VideoMetadata }
+  | { status: 'success'; metadata: VideoMetadata; thumbnailDataUrl: string | null }
   | { status: 'cancelled' }
   | ({ status: 'error' } & VideoSelectionError)
 

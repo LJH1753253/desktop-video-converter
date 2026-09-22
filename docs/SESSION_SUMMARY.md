@@ -1,6 +1,6 @@
 # 累计 AI 辅助开发记录
 
-本文记录项目截至“视频选择 + ffprobe 元数据读取”里程碑结束时，开发者与 Codex 共同完成的工作、实际决策与真实反馈。
+本文记录项目截至“视频缩略图生成与显示”里程碑结束时，开发者与 Codex 共同完成的工作、实际决策与真实反馈。
 
 ## 1. 项目目标
 
@@ -142,10 +142,17 @@ Codex 曾在没有明确要求时主动创建或更新 `SESSION_SUMMARY.md` 和 
 - 空格路径
 - 无效媒体友好错误
 - 加载失败后保留上一次成功视频的信息
+- FFmpeg 单帧缩略图生成
+- JPEG image2pipe stdout 输出
+- Buffer 转 Base64 Data URL
+- Renderer 缩略图显示
+- 缩略图失败占位 UI
+- 横屏和竖屏缩略图比例保持
+- 加载失败后保留上一次成功视频的缩略图
+- 用户取消选择时保留当前缩略图
 
 ### 尚未实现
 
-- 缩略图
 - 视频转换
 - Drag & Drop
 - Progress
@@ -153,3 +160,104 @@ Codex 曾在没有明确要求时主动创建或更新 `SESSION_SUMMARY.md` 和 
 - Quality Preset
 - 批量任务
 - 正式 UI
+- 最终打包
+- FFmpeg 随应用分发
+
+## 5. 里程碑：视频缩略图生成与显示
+
+### 实现方式
+
+缩略图生成与显示采用以下调用链：
+
+```text
+Renderer
+→ Preload
+→ IPC
+→ Main Process
+→ FFmpeg
+→ JPEG stdout
+→ Buffer
+→ Base64 Data URL
+→ Renderer <img>
+```
+
+实现使用系统 FFmpeg CLI，不创建临时 JPEG 文件。FFmpeg 通过以下方式执行：
+
+```ts
+spawn('ffmpeg', args, {
+  shell: false
+})
+```
+
+缩略图最大尺寸为 640×360，并通过以下过滤器保持原始宽高比：
+
+```text
+scale=640:360:force_original_aspect_ratio=decrease
+```
+
+### 开发者决策：不使用临时图片文件
+
+开发者选择 FFmpeg `image2pipe`、stdout Buffer 和 Base64 Data URL 的实现方式。
+
+原因：
+
+- 避免临时文件的创建和清理；
+- 避免 `file://` 路径和 Electron 本地资源访问问题；
+- 单张低分辨率缩略图的数据量较小，适合当前三天 MVP；
+- 保持 Renderer 不直接访问文件系统。
+
+这不是唯一正确的缩略图方案。如果未来需要大量缩略图或批量任务，可以重新评估缓存文件或自定义协议方案。
+
+### 开发者决策：抽帧时间点
+
+当 `duration` 是有效正数时：
+
+```text
+timestamp = min(duration × 0.1, 10)
+```
+
+即：
+
+- 大约取视频 10% 的位置；
+- 最多不超过第 10 秒；
+- `duration` 无效时 fallback 到 0 秒。
+
+该策略用于减少固定取第 0 秒时遇到黑帧、片头或不具代表性的第一帧的概率。
+
+### 开发者决策：缩略图失败必须非致命
+
+元数据读取属于核心功能，缩略图属于辅助功能。
+
+如果 ffprobe 成功而 FFmpeg 抽帧失败：
+
+- 整体视频选择仍返回 `success`；
+- `metadata` 正常显示；
+- `thumbnailDataUrl` 为 `null`；
+- Main Process 记录技术错误；
+- Renderer 显示“无法生成视频预览”；
+- 不把缩略图失败升级成整个视频加载失败。
+
+这是 graceful degradation（优雅降级）。
+
+### 当前实现状态
+
+在原有元数据功能基础上，已经新增：
+
+- FFmpeg 单帧抽取
+- JPEG image2pipe stdout
+- Buffer 转 Base64 Data URL
+- Renderer 缩略图显示
+- 缩略图失败占位 UI
+- 横屏 / 竖屏比例保持
+- 加载失败后保留上一成功缩略图
+- 用户取消选择时保留当前缩略图
+
+尚未实现：
+
+- 视频格式转换
+- Progress
+- Cancel
+- Drag & Drop
+- Quality Preset
+- 最终打包
+- FFmpeg 随应用分发

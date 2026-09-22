@@ -1,6 +1,6 @@
 # 测试报告
 
-本文记录项目截至“视频选择 + ffprobe 元数据读取”里程碑结束时已经真实执行的人工测试和自动检查。
+本文记录项目截至“视频缩略图生成与显示”里程碑结束时已经真实执行的人工测试和自动检查。
 
 ## 1. 开发者人工测试
 
@@ -146,11 +146,128 @@ npm run build
 - Preload build
 - Renderer build
 
+### T11 普通 MP4 缩略图
+
+开发者加载：`324469248.mp4`
+
+结果：通过。
+
+- 缩略图成功显示；
+- 元数据正常；
+- 画面无明显拉伸；
+- 无红色错误提示。
+
+### T12 中文路径缩略图
+
+普通测试视频本身位于中文目录。
+
+结果：通过。
+
+- FFmpeg 能从中文路径视频生成缩略图；
+- 缩略图正常显示。
+
+### T13 空格路径缩略图
+
+测试路径：
+
+```text
+D:\Video Test\sample video.mp4
+```
+
+结果：通过。
+
+- 目录和文件名包含空格；
+- FFmpeg 抽帧正常；
+- 缩略图正常显示。
+
+### T14 无音频视频缩略图
+
+测试文件：`sample video no audio.mp4`
+
+结果：通过。
+
+- 缩略图正常显示；
+- 音频编码仍显示“无音频流”；
+- 无音轨没有影响视频抽帧。
+
+### T15 WebM 缩略图
+
+测试文件：`sample video.webm`
+
+结果：通过。
+
+- WebM 正常读取；
+- 缩略图正常显示；
+- 无异常。
+
+### T16 竖屏 / 非 16:9 视频
+
+开发者使用 FFmpeg 将测试视频旋转为竖屏视频：`vertical video.mp4`。
+
+UI 显示分辨率：
+
+```text
+720 × 1280
+```
+
+结果：通过。
+
+- 缩略图保持竖屏比例；
+- 没有被拉伸成横向 16:9；
+- 元数据正常。
+
+### T17 正常视频 → 无效视频
+
+步骤：
+
+1. 先加载正常视频并成功显示缩略图；
+2. 再选择无效的 `invalid video.mp4`。
+
+结果：通过。
+
+- 显示友好错误提示；
+- 应用不崩溃；
+- 上一次成功视频的 metadata 保留；
+- 上一次成功视频的缩略图保留。
+
+### T18 正常视频 → 取消文件选择
+
+步骤：
+
+1. 当前已有正常视频及缩略图；
+2. 点击选择视频；
+3. 在文件选择器中取消。
+
+结果：通过。
+
+- 当前 metadata 不变；
+- 当前 thumbnail 不变；
+- 不新增错误。
+
+### T19 本轮最终本机 Build
+
+开发者本人执行：
+
+```powershell
+npm run build
+```
+
+结果：通过。
+
+包括：
+
+- Main / Preload TypeScript typecheck
+- Renderer TypeScript typecheck
+- Main build
+- Preload build
+- Renderer build
+
 ## 2. 自动检查
 
-以下为 Codex 在自动/代理环境中执行的检查：
+以下为 Codex 在本轮自动/代理环境中执行的检查：
 
-- TypeScript typecheck：通过
+- Main / Preload TypeScript typecheck：通过
+- Renderer TypeScript typecheck：通过
 - ESLint：通过
 - electron-vite build：通过
 
@@ -160,6 +277,7 @@ npm run build
 
 - MOV
 - MKV
-- 后续缩略图功能
+- FFmpeg 缩略图生成失败时的实际降级行为
 - 后续转码功能
 - 最终打包应用
+- FFmpeg 随应用分发
