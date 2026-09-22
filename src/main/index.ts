@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
+import { registerVideoIpcHandlers } from './video-ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -33,6 +34,7 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  registerVideoIpcHandlers()
   createWindow()
 
   app.on('activate', function () {

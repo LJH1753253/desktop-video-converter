@@ -1,4 +1,12 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
+import {
+  SELECT_VIDEO_CHANNEL,
+  type VideoApi,
+  type VideoSelectionResult
+} from '../shared/video-metadata'
 
-// Keep the preload boundary in place without exposing Node.js APIs.
-contextBridge.exposeInMainWorld('desktopVideoConverter', Object.freeze({}))
+const videoApi: VideoApi = Object.freeze({
+  selectVideo: () => ipcRenderer.invoke(SELECT_VIDEO_CHANNEL) as Promise<VideoSelectionResult>
+})
+
+contextBridge.exposeInMainWorld('videoApi', videoApi)

@@ -1,6 +1,8 @@
+import type { VideoApi } from '../shared/video-metadata'
+
 declare global {
   interface Window {
-    desktopVideoConverter: Readonly<Record<string, never>>
+    videoApi: VideoApi
   }
 }
 
