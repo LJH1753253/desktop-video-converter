@@ -1,6 +1,6 @@
 # 测试报告
 
-本文记录项目截至“视频缩略图生成与显示”里程碑结束时已经真实执行的人工测试和自动检查。
+本文记录项目截至“基础视频格式转换”里程碑结束时已经真实执行的人工测试和自动检查。
 
 ## 1. 开发者人工测试
 
@@ -262,6 +262,175 @@ npm run build
 - Preload build
 - Renderer build
 
+### T20 App 内 MP4 → WebM
+
+输入：
+
+```text
+D:\Video Test\sample video.mp4
+```
+
+输出：
+
+```text
+D:\Video Test\ui-converted.webm
+```
+
+开发者确认：
+
+- UI 转换流程正常；
+- 文件生成成功；
+- 文件可以正常播放；
+- ffprobe 检查结果：
+  - video codec：`vp9`
+  - audio codec：`opus`
+  - `format_name`：`matroska,webm`
+  - duration：`8.741000`
+
+结果：通过。
+
+### T21 App 内 WebM → MP4
+
+输入：`sample video.webm`
+
+输出：
+
+```text
+D:\Video Test\webm-to-mp4.mp4
+```
+
+ffprobe 检查结果：
+
+- video codec：`h264`
+- `pix_fmt`：`yuv420p`
+- audio codec：`aac`
+- `format_name`：`mov,mp4,m4a,3gp,3g2,mj2`
+- duration：`8.748500`
+
+结果：通过。
+
+### T22 无音频 MP4 → WebM
+
+输入：`sample video no audio.mp4`
+
+输出：
+
+```text
+D:\Video Test\no-audio-to-webm.webm
+```
+
+ffprobe 检查结果：
+
+- 只有 video stream；
+- video codec：`vp9`；
+- 没有 audio stream；
+- `format_name`：`matroska,webm`；
+- duration：`8.666000`。
+
+结果：通过。
+
+该测试验证了 `-map 0:a?` 对无音频输入正常工作。
+
+### T23 输入文件覆盖保护
+
+输入：
+
+```text
+D:\Video Test\sample video.mp4
+```
+
+目标格式：MP4。
+
+开发者在 Save Dialog 中故意选择输入文件本身作为输出。
+
+结果：
+
+- UI 显示“无法保存到原视频”；
+- UI 提示输出文件不能与当前输入视频相同；
+- 保护逻辑成功触发；
+- metadata 保持；
+- thumbnail 保持；
+- 开发者在测试前后分别执行 SHA256；
+- 前后 SHA256 完全一致；
+- 确认原视频没有被修改。
+
+结果：通过。
+
+### T24 Save Dialog 取消
+
+步骤：
+
+1. 当前已有成功加载的视频；
+2. 点击开始转换；
+3. Save Dialog 出现；
+4. 点击取消。
+
+结果：
+
+- 不启动转换；
+- 不显示错误；
+- 不显示伪成功；
+- metadata 保持；
+- thumbnail 保持；
+- 开始转换按钮恢复可用。
+
+结果：通过。
+
+### T25 App 内 MP4 → MOV
+
+输出：
+
+```text
+D:\Video Test\mp4-to-mov.mov
+```
+
+ffprobe 检查结果：
+
+- video codec：`h264`
+- `pix_fmt`：`yuv420p`
+- audio codec：`aac`
+- `format_name`：`mov,mp4,m4a,3gp,3g2,mj2`
+- duration：`8.704500`
+- `major_brand`：`"qt  "`
+
+结果：通过。
+
+### T26 App 内 MP4 → MKV
+
+输出：
+
+```text
+D:\Video Test\mp4-to-mkv.mkv
+```
+
+ffprobe 检查结果：
+
+- video codec：`h264`
+- `pix_fmt`：`yuv420p`
+- audio codec：`aac`
+- `format_name`：`matroska,webm`
+- duration：`8.725000`
+
+结果：通过。
+
+### T27 本轮最终本机 Build
+
+开发者本人执行：
+
+```powershell
+npm run build
+```
+
+结果：通过。
+
+实际包括：
+
+- Main / Preload TypeScript typecheck：通过；
+- Renderer TypeScript typecheck：通过；
+- Main build：通过；
+- Preload build：通过；
+- Renderer build：通过。
+
 ## 2. 自动检查
 
 以下为 Codex 在本轮自动/代理环境中执行的检查：
@@ -275,9 +444,14 @@ npm run build
 
 ## 3. 当前未测试 / 后续测试
 
-- MOV
-- MKV
 - FFmpeg 缩略图生成失败时的实际降级行为
-- 后续转码功能
-- 最终打包应用
+- 中文路径下的视频转换
+- FFmpeg 真正失败时的转换错误 UI
+- 转换过程中取消
+- 转换百分比 Progress
+- 已有的非输入目标文件覆盖
+- 输出扩展名不匹配
+- 最终安装包
 - FFmpeg 随应用分发
+- 大文件 / 长视频转换
+- 批量转换

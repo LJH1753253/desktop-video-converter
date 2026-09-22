@@ -1,3 +1,5 @@
+import type { OutputFormat, VideoConversionResult } from './video-conversion'
+
 export interface VideoMetadata {
   filePath: string
   fileName: string
@@ -33,6 +35,7 @@ export type VideoSelectionResult =
 
 export interface VideoApi {
   selectVideo: () => Promise<VideoSelectionResult>
+  convertVideo: (targetFormat: OutputFormat) => Promise<VideoConversionResult>
 }
 
 export const SELECT_VIDEO_CHANNEL = 'video:select' as const

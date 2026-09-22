@@ -1,7 +1,21 @@
 import { dialog, ipcMain } from 'electron'
+import {
+  CONVERT_VIDEO_CHANNEL,
+  isOutputFormat,
+  type VideoConversionResult
+} from '../shared/video-conversion'
 import { SELECT_VIDEO_CHANNEL, type VideoSelectionResult } from '../shared/video-metadata'
+import {
+  convertVideo,
+  createDefaultOutputPath,
+  getConversionFormatLabel,
+  hasExpectedOutputExtension,
+  VideoConversionProcessError
+} from './converter'
 import { readVideoMetadata, VideoMetadataError } from './ffprobe'
 import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
+
+let currentVideoFilePath: string | null = null
 
 function toErrorResult(error: unknown): VideoSelectionResult {
   if (error instanceof VideoMetadataError) {
@@ -32,6 +46,45 @@ function logThumbnailFailure(error: unknown): void {
   console.error('Unexpected error while generating video thumbnail:', error)
 }
 
+function toConversionErrorResult(error: unknown): VideoConversionResult {
+  if (error instanceof VideoConversionProcessError) {
+    console.error(`[${error.code}] ${error.technicalDetails}`)
+
+    if (error.code === 'OUTPUT_MATCHES_INPUT') {
+      return {
+        status: 'error',
+        code: error.code,
+        title: '无法保存到原视频',
+        message: '输出文件不能与当前输入视频相同，请选择其他文件名或位置。'
+      }
+    }
+
+    if (error.code === 'FFMPEG_START_FAILED') {
+      return {
+        status: 'error',
+        code: error.code,
+        title: '无法开始转换',
+        message: '无法启动视频转换程序，请确认本机已正确安装 FFmpeg 后重试。'
+      }
+    }
+
+    return {
+      status: 'error',
+      code: error.code,
+      title: '视频转换失败',
+      message: '视频转换未能完成，请确认输入文件可用后重试。'
+    }
+  }
+
+  console.error('Unexpected error while converting video:', error)
+  return {
+    status: 'error',
+    code: 'UNKNOWN',
+    title: '视频转换失败',
+    message: '转换过程中发生未知错误，请重试。'
+  }
+}
+
 export function registerVideoIpcHandlers(): void {
   ipcMain.handle(SELECT_VIDEO_CHANNEL, async (): Promise<VideoSelectionResult> => {
     try {
@@ -60,6 +113,8 @@ export function registerVideoIpcHandlers(): void {
         logThumbnailFailure(error)
       }
 
+      currentVideoFilePath = filePath
+
       return {
         status: 'success',
         metadata,
@@ -69,4 +124,66 @@ export function registerVideoIpcHandlers(): void {
       return toErrorResult(error)
     }
   })
+
+  ipcMain.handle(
+    CONVERT_VIDEO_CHANNEL,
+    async (_event, targetFormat: unknown): Promise<VideoConversionResult> => {
+      if (!isOutputFormat(targetFormat)) {
+        return {
+          status: 'error',
+          code: 'INVALID_OUTPUT_FORMAT',
+          title: '无法开始转换',
+          message: '请选择受支持的输出格式。'
+        }
+      }
+
+      if (currentVideoFilePath === null) {
+        return {
+          status: 'error',
+          code: 'NO_INPUT_VIDEO',
+          title: '请先选择视频',
+          message: '成功加载一个视频后才能开始转换。'
+        }
+      }
+
+      const inputPath = currentVideoFilePath
+      const formatLabel = getConversionFormatLabel(targetFormat)
+
+      try {
+        const saveResult = await dialog.showSaveDialog({
+          title: '保存转换后的视频',
+          buttonLabel: '保存并转换',
+          defaultPath: createDefaultOutputPath(inputPath, targetFormat),
+          filters: [
+            {
+              name: `${formatLabel} 视频`,
+              extensions: [targetFormat]
+            }
+          ]
+        })
+
+        if (saveResult.canceled || !saveResult.filePath) {
+          return { status: 'cancelled' }
+        }
+
+        if (!hasExpectedOutputExtension(saveResult.filePath, targetFormat)) {
+          return {
+            status: 'error',
+            code: 'INVALID_OUTPUT_EXTENSION',
+            title: '输出格式不匹配',
+            message: `输出文件名必须使用 .${targetFormat} 扩展名，请重新选择保存位置。`
+          }
+        }
+
+        await convertVideo(inputPath, saveResult.filePath, targetFormat)
+
+        return {
+          status: 'success',
+          outputPath: saveResult.filePath
+        }
+      } catch (error: unknown) {
+        return toConversionErrorResult(error)
+      }
+    }
+  )
 }

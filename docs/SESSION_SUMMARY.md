@@ -1,6 +1,6 @@
 # 累计 AI 辅助开发记录
 
-本文记录项目截至“视频缩略图生成与显示”里程碑结束时，开发者与 Codex 共同完成的工作、实际决策与真实反馈。
+本文记录项目截至“基础视频格式转换”里程碑结束时，开发者与 Codex 共同完成的工作、实际决策与真实反馈。
 
 ## 1. 项目目标
 
@@ -150,17 +150,22 @@ Codex 曾在没有明确要求时主动创建或更新 `SESSION_SUMMARY.md` 和 
 - 横屏和竖屏缩略图比例保持
 - 加载失败后保留上一次成功视频的缩略图
 - 用户取消选择时保留当前缩略图
+- MP4 / MOV / MKV / WebM 基础视频格式转换
+- 原生 Save Dialog 输出路径选择
+- 固定且受控的编码 profile
+- 无音频输入转换
+- 转换成功、取消和错误状态反馈
+- 输入文件覆盖保护
+- 转换期间保持当前 metadata 和 thumbnail
 
 ### 尚未实现
 
-- 视频转换
 - Drag & Drop
-- Progress
-- Cancel
+- 转换百分比 Progress
+- 转换中 Cancel
 - Quality Preset
-- 批量任务
-- 正式 UI
-- 最终打包
+- Batch
+- 最终安装包 / 正式打包
 - FFmpeg 随应用分发
 
 ## 5. 里程碑：视频缩略图生成与显示
@@ -254,10 +259,145 @@ timestamp = min(duration × 0.1, 10)
 
 尚未实现：
 
-- 视频格式转换
 - Progress
 - Cancel
 - Drag & Drop
 - Quality Preset
 - 最终打包
 - FFmpeg 随应用分发
+
+## 6. 里程碑：基础视频格式转换
+
+### 基础转换调用链
+
+基础视频转换采用以下调用链：
+
+```text
+Renderer
+→ window.videoApi.convertVideo(targetFormat)
+→ Preload
+→ video:convert IPC
+→ Main Process
+→ Electron Save Dialog
+→ converter.ts
+→ spawn('ffmpeg', args, { shell: false })
+→ 输出文件
+→ success / cancelled / error
+→ Renderer
+```
+
+### 支持的受控输出格式
+
+共享 `OutputFormat` 类型只允许以下四种值：
+
+- `mp4`
+- `mov`
+- `mkv`
+- `webm`
+
+Renderer 只能发送目标格式，不能控制任意 FFmpeg 参数、codec 名称、shell command、`inputPath` 或 `outputPath` 的直接 FFmpeg 执行逻辑。Main Process 使用 `isOutputFormat()` 对 IPC 输入再次进行运行时校验。
+
+### 固定编码 profile
+
+四种输出格式使用固定编码配置：
+
+- MP4：`libx264`、`aac`、`yuv420p`
+- MOV：`libx264`、`aac`、`yuv420p`
+- MKV：`libx264`、`aac`、`yuv420p`
+- WebM：`libvpx-vp9`、`libopus`
+
+共同使用以下 stream mapping：
+
+```text
+-map 0:v:0
+-map 0:a?
+```
+
+其中 `0:a?` 表示音频流为可选项，因此输入视频不存在音频流时仍可正常转换。
+
+### 输出路径设计
+
+Main Process 使用 Electron 原生 `showSaveDialog()` 让用户选择最终输出位置。默认输出文件名为：
+
+```text
+<原文件名>-converted.<目标格式>
+```
+
+文件名和路径通过 Node.js 的 `path.parse()`、`path.join()` 等路径 API 处理，不手工拆分路径。
+
+如果用户取消 Save Dialog：
+
+- 返回 `cancelled`；
+- 不启动 FFmpeg；
+- Renderer 不显示错误；
+- 当前 metadata 和 thumbnail 保持不变。
+
+### 当前输入视频状态
+
+Main Process 保存最近一次成功加载的视频路径，只有新视频成功读取 metadata 后才更新当前输入路径。
+
+因此，以下流程中当前可转换输入仍然是视频 A：
+
+```text
+成功加载 A
+→ 尝试加载无效 B
+→ B 读取失败
+→ 当前可转换输入仍保持 A
+```
+
+Renderer 不需要重新传入任意 `inputPath`。
+
+### 输入文件保护
+
+转换前会比较 `inputPath` 和 `outputPath`。在 Windows 下，比较过程会先将路径解析为绝对路径并忽略路径大小写。
+
+如果两个路径相同：
+
+- 返回 `OUTPUT_MATCHES_INPUT`；
+- 不启动 FFmpeg；
+- UI 显示友好错误。
+
+开发者已实际人工测试：在 Save Dialog 中选择原视频本身作为输出后，保护逻辑成功触发。开发者在转换前后分别计算原视频的 SHA256，结果完全一致，确认原文件没有被修改。
+
+### FFmpeg 执行安全
+
+FFmpeg 通过以下方式执行：
+
+```ts
+spawn('ffmpeg', args, {
+  shell: false
+})
+```
+
+输入路径和输出路径均为独立 argv 元素，不拼接 shell command。完整 stderr 只保留在 Main Process 技术日志中，不直接返回 Renderer。
+
+用户在 Save Dialog 中明确确认输出路径后，FFmpeg 使用 `-y`，避免已有目标文件时在无 stdin 的情况下等待覆盖确认。
+
+### Renderer 状态
+
+只有成功加载 metadata 后才显示转换区域。转换区域包含：
+
+- MP4 / MOV / MKV / WebM 目标格式选择；
+- 开始转换按钮；
+- “正在转换…”状态；
+- success 输出路径；
+- error 友好消息。
+
+转换期间禁止再次选择输入视频、修改目标格式或重复点击开始转换。转换成功、转换失败或取消 Save Dialog 均不会破坏当前 metadata 和 thumbnail。
+
+### 当前范围与后续改进
+
+本轮尚未实现：
+
+- 转换百分比 Progress
+- 转换中 Cancel
+- Drag & Drop
+- Quality Preset
+- Batch
+- 最终安装包 / 正式打包
+- FFmpeg 随应用分发
+
+已知的非阻塞后续改进：
+
+- FFmpeg 中途失败时可能留下不完整的输出文件，目前尚未实现“临时文件写入成功后再 rename”的策略；
+- 最终随应用分发 FFmpeg 后，面向普通用户的错误提示不应再要求用户自行安装 FFmpeg。

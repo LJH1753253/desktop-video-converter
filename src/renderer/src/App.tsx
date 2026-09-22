@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { OutputFormat, VideoConversionError } from '../../shared/video-conversion'
 import type { VideoMetadata, VideoSelectionError } from '../../shared/video-metadata'
 
 function formatFileSize(bytes: number): string {
@@ -44,6 +45,10 @@ function App(): React.JSX.Element {
   const [thumbnailDataUrl, setThumbnailDataUrl] = useState<string | null>(null)
   const [errorInfo, setErrorInfo] = useState<VideoSelectionError | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>('mp4')
+  const [isConverting, setIsConverting] = useState(false)
+  const [conversionError, setConversionError] = useState<VideoConversionError | null>(null)
+  const [convertedOutputPath, setConvertedOutputPath] = useState<string | null>(null)
 
   const handleSelectVideo = async (): Promise<void> => {
     setIsSelecting(true)
@@ -55,6 +60,8 @@ function App(): React.JSX.Element {
         setMetadata(result.metadata)
         setThumbnailDataUrl(result.thumbnailDataUrl)
         setErrorInfo(null)
+        setConversionError(null)
+        setConvertedOutputPath(null)
       } else if (result.status === 'error') {
         setErrorInfo(result)
       }
@@ -70,12 +77,37 @@ function App(): React.JSX.Element {
     }
   }
 
+  const handleConvertVideo = async (): Promise<void> => {
+    setIsConverting(true)
+    setConversionError(null)
+    setConvertedOutputPath(null)
+
+    try {
+      const result = await window.videoApi.convertVideo(outputFormat)
+
+      if (result.status === 'success') {
+        setConvertedOutputPath(result.outputPath)
+      } else if (result.status === 'error') {
+        setConversionError(result)
+      }
+    } catch (error: unknown) {
+      console.error('Failed to communicate with the main process:', error)
+      setConversionError({
+        code: 'UNKNOWN',
+        title: '视频转换失败',
+        message: '无法与主进程通信，请重试。'
+      })
+    } finally {
+      setIsConverting(false)
+    }
+  }
+
   return (
     <main className="home">
       <h1>Desktop Video Converter</h1>
       <p className="subtitle">桌面视频格式转换器</p>
 
-      <button type="button" onClick={handleSelectVideo} disabled={isSelecting}>
+      <button type="button" onClick={handleSelectVideo} disabled={isSelecting || isConverting}>
         {isSelecting ? '正在读取…' : '选择视频'}
       </button>
 
@@ -132,6 +164,42 @@ function App(): React.JSX.Element {
             <dd>{metadata.container ?? '未知'}</dd>
           </div>
         </dl>
+      )}
+
+      {metadata && (
+        <section className="conversion" aria-label="视频格式转换">
+          <label htmlFor="output-format">目标格式</label>
+          <select
+            id="output-format"
+            value={outputFormat}
+            onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
+            disabled={isConverting}
+          >
+            <option value="mp4">MP4</option>
+            <option value="mov">MOV</option>
+            <option value="mkv">MKV</option>
+            <option value="webm">WebM</option>
+          </select>
+
+          <button type="button" onClick={handleConvertVideo} disabled={isConverting || isSelecting}>
+            {isConverting ? '正在转换…' : '开始转换'}
+          </button>
+
+          {convertedOutputPath && (
+            <div className="conversion-success" role="status">
+              <strong>转换完成</strong>
+              <p>已保存到：</p>
+              <p className="output-path">{convertedOutputPath}</p>
+            </div>
+          )}
+
+          {conversionError && (
+            <div className="error conversion-error" role="alert">
+              <strong>{conversionError.title}</strong>
+              <p>{conversionError.message}</p>
+            </div>
+          )}
+        </section>
       )}
     </main>
   )
