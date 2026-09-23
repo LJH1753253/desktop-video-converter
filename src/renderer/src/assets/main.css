@@ -470,6 +470,76 @@ select:focus-visible {
   opacity: 0.65;
 }
 
+.quality-options {
+  min-width: 0;
+  margin: 22px 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.quality-options legend {
+  padding: 0;
+}
+
+.quality-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 8px;
+  border: 1px solid #e2e7f0;
+  border-radius: 10px;
+  padding: 0.68rem 0.72rem;
+  color: #536077;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.quality-option:hover {
+  border-color: #cbd3e2;
+  background: #fbfcff;
+}
+
+.quality-option.is-selected {
+  border-color: #b8c1f5;
+  background: var(--accent-soft);
+}
+
+.quality-option input {
+  flex: 0 0 auto;
+  margin: 0.2rem 0 0;
+  accent-color: var(--accent);
+}
+
+.quality-option span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.quality-option strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.quality-option em {
+  color: var(--accent-dark);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.quality-option small {
+  color: #7e899c;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.quality-options:disabled .quality-option {
+  cursor: wait;
+  opacity: 0.64;
+}
+
 .save-hint {
   display: flex;
   gap: 0.65rem;

@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import type { OutputFormat, VideoConversionError } from '../../shared/video-conversion'
+import type {
+  OutputFormat,
+  QualityPreset,
+  VideoConversionError
+} from '../../shared/video-conversion'
 import type {
   VideoMetadata,
   VideoSelectionError,
@@ -16,6 +20,7 @@ function App(): React.JSX.Element {
   const [errorInfo, setErrorInfo] = useState<VideoSelectionError | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('mp4')
+  const [qualityPreset, setQualityPreset] = useState<QualityPreset>('balanced')
   const [isConverting, setIsConverting] = useState(false)
   const [conversionError, setConversionError] = useState<VideoConversionError | null>(null)
   const [convertedOutputPath, setConvertedOutputPath] = useState<string | null>(null)
@@ -77,7 +82,7 @@ function App(): React.JSX.Element {
     setConvertedOutputPath(null)
 
     try {
-      const result = await window.videoApi.convertVideo(outputFormat)
+      const result = await window.videoApi.convertVideo(outputFormat, qualityPreset)
 
       if (result.status === 'success') {
         setConvertedOutputPath(result.outputPath)
@@ -114,9 +119,11 @@ function App(): React.JSX.Element {
         <OutputSettingsPanel
           metadata={metadata}
           outputFormat={outputFormat}
+          qualityPreset={qualityPreset}
           isConverting={isConverting}
           isLoading={isSelecting}
           onOutputFormatChange={setOutputFormat}
+          onQualityPresetChange={setQualityPreset}
           onConvert={handleConvertVideo}
         />
       </section>

@@ -1,21 +1,25 @@
-import type { OutputFormat } from '../../../shared/video-conversion'
+import type { OutputFormat, QualityPreset } from '../../../shared/video-conversion'
 import type { VideoMetadata } from '../../../shared/video-metadata'
 
 interface OutputSettingsPanelProps {
   metadata: VideoMetadata | null
   outputFormat: OutputFormat
+  qualityPreset: QualityPreset
   isConverting: boolean
   isLoading: boolean
   onOutputFormatChange: (format: OutputFormat) => void
+  onQualityPresetChange: (preset: QualityPreset) => void
   onConvert: () => void
 }
 
 function OutputSettingsPanel({
   metadata,
   outputFormat,
+  qualityPreset,
   isConverting,
   isLoading,
   onOutputFormatChange,
+  onQualityPresetChange,
   onConvert
 }: OutputSettingsPanelProps): React.JSX.Element {
   return (
@@ -53,6 +57,53 @@ function OutputSettingsPanel({
             <option value="mkv">MKV</option>
             <option value="webm">WebM</option>
           </select>
+
+          <fieldset className="quality-options" disabled={isConverting}>
+            <legend className="field-label">质量</legend>
+            <label className={`quality-option${qualityPreset === 'high' ? ' is-selected' : ''}`}>
+              <input
+                type="radio"
+                name="quality-preset"
+                value="high"
+                checked={qualityPreset === 'high'}
+                onChange={() => onQualityPresetChange('high')}
+              />
+              <span>
+                <strong>高质量</strong>
+                <small>优先保持画质，文件通常较大</small>
+              </span>
+            </label>
+            <label
+              className={`quality-option${qualityPreset === 'balanced' ? ' is-selected' : ''}`}
+            >
+              <input
+                type="radio"
+                name="quality-preset"
+                value="balanced"
+                checked={qualityPreset === 'balanced'}
+                onChange={() => onQualityPresetChange('balanced')}
+              />
+              <span>
+                <strong>
+                  均衡 <em>推荐</em>
+                </strong>
+                <small>质量和文件大小之间的推荐折中</small>
+              </span>
+            </label>
+            <label className={`quality-option${qualityPreset === 'smaller' ? ' is-selected' : ''}`}>
+              <input
+                type="radio"
+                name="quality-preset"
+                value="smaller"
+                checked={qualityPreset === 'smaller'}
+                onChange={() => onQualityPresetChange('smaller')}
+              />
+              <span>
+                <strong>更小文件</strong>
+                <small>提高压缩强度，文件通常更小</small>
+              </span>
+            </label>
+          </fieldset>
 
           <div className="save-hint">
             <span className="save-hint-icon" aria-hidden="true">

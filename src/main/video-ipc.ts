@@ -2,6 +2,7 @@ import { dialog, ipcMain } from 'electron'
 import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
+  isQualityPreset,
   isOutputFormat,
   type VideoConversionResult
 } from '../shared/video-conversion'
@@ -169,13 +170,26 @@ export function registerVideoIpcHandlers(): void {
 
   ipcMain.handle(
     CONVERT_VIDEO_CHANNEL,
-    async (_event, targetFormat: unknown): Promise<VideoConversionResult> => {
+    async (
+      _event,
+      targetFormat: unknown,
+      qualityPreset: unknown
+    ): Promise<VideoConversionResult> => {
       if (!isOutputFormat(targetFormat)) {
         return {
           status: 'error',
           code: 'INVALID_OUTPUT_FORMAT',
           title: '无法开始转换',
           message: '请选择受支持的输出格式。'
+        }
+      }
+
+      if (!isQualityPreset(qualityPreset)) {
+        return {
+          status: 'error',
+          code: 'INVALID_QUALITY_PRESET',
+          title: '无法开始转换',
+          message: '请选择受支持的质量选项。'
         }
       }
 
@@ -217,7 +231,7 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
-        await convertVideo(inputPath, saveResult.filePath, targetFormat)
+        await convertVideo(inputPath, saveResult.filePath, targetFormat, qualityPreset)
 
         return {
           status: 'success',

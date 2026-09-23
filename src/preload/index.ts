@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   CONVERT_VIDEO_CHANNEL,
   type OutputFormat,
+  type QualityPreset,
   type VideoConversionResult
 } from '../shared/video-conversion'
 import {
@@ -19,8 +20,12 @@ const videoApi: VideoApi = Object.freeze({
     const filePath = webUtils.getPathForFile(electronFile)
     return ipcRenderer.invoke(LOAD_DROPPED_VIDEO_CHANNEL, filePath) as Promise<VideoSelectionResult>
   },
-  convertVideo: (targetFormat: OutputFormat) =>
-    ipcRenderer.invoke(CONVERT_VIDEO_CHANNEL, targetFormat) as Promise<VideoConversionResult>
+  convertVideo: (targetFormat: OutputFormat, qualityPreset: QualityPreset) =>
+    ipcRenderer.invoke(
+      CONVERT_VIDEO_CHANNEL,
+      targetFormat,
+      qualityPreset
+    ) as Promise<VideoConversionResult>
 })
 
 contextBridge.exposeInMainWorld('videoApi', videoApi)

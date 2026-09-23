@@ -1,28 +1,74 @@
 import { spawn } from 'node:child_process'
 import { extname, join, parse, resolve } from 'node:path'
-import type { OutputFormat, VideoConversionErrorCode } from '../shared/video-conversion'
+import type {
+  OutputFormat,
+  QualityPreset,
+  VideoConversionErrorCode
+} from '../shared/video-conversion'
 
 interface ConversionProfile {
   label: string
-  codecArgs: readonly string[]
+  codecArgs: (qualityPreset: QualityPreset) => readonly string[]
+}
+
+const H264_QUALITY_ARGS: Record<QualityPreset, readonly string[]> = {
+  high: ['-crf', '18', '-b:a', '192k'],
+  balanced: ['-crf', '23', '-b:a', '128k'],
+  smaller: ['-crf', '28', '-b:a', '96k']
+}
+
+const VP9_QUALITY_ARGS: Record<QualityPreset, readonly string[]> = {
+  high: ['-crf', '24', '-b:v', '0', '-b:a', '160k'],
+  balanced: ['-crf', '31', '-b:v', '0', '-b:a', '128k'],
+  smaller: ['-crf', '37', '-b:v', '0', '-b:a', '96k']
 }
 
 const CONVERSION_PROFILES: Record<OutputFormat, ConversionProfile> = {
   mp4: {
     label: 'MP4',
-    codecArgs: ['-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p']
+    codecArgs: (qualityPreset) => [
+      '-c:v',
+      'libx264',
+      ...H264_QUALITY_ARGS[qualityPreset],
+      '-c:a',
+      'aac',
+      '-pix_fmt',
+      'yuv420p'
+    ]
   },
   mov: {
     label: 'MOV',
-    codecArgs: ['-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p']
+    codecArgs: (qualityPreset) => [
+      '-c:v',
+      'libx264',
+      ...H264_QUALITY_ARGS[qualityPreset],
+      '-c:a',
+      'aac',
+      '-pix_fmt',
+      'yuv420p'
+    ]
   },
   mkv: {
     label: 'MKV',
-    codecArgs: ['-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p']
+    codecArgs: (qualityPreset) => [
+      '-c:v',
+      'libx264',
+      ...H264_QUALITY_ARGS[qualityPreset],
+      '-c:a',
+      'aac',
+      '-pix_fmt',
+      'yuv420p'
+    ]
   },
   webm: {
     label: 'WebM',
-    codecArgs: ['-c:v', 'libvpx-vp9', '-c:a', 'libopus']
+    codecArgs: (qualityPreset) => [
+      '-c:v',
+      'libvpx-vp9',
+      ...VP9_QUALITY_ARGS[qualityPreset],
+      '-c:a',
+      'libopus'
+    ]
   }
 }
 
@@ -64,7 +110,8 @@ function isSameFilePath(inputPath: string, outputPath: string): boolean {
 export function convertVideo(
   inputPath: string,
   outputPath: string,
-  format: OutputFormat
+  format: OutputFormat,
+  qualityPreset: QualityPreset
 ): Promise<void> {
   if (isSameFilePath(inputPath, outputPath)) {
     throw new VideoConversionProcessError(
@@ -85,7 +132,7 @@ export function convertVideo(
     '0:v:0',
     '-map',
     '0:a?',
-    ...profile.codecArgs,
+    ...profile.codecArgs(qualityPreset),
     outputPath
   ]
 
