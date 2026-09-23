@@ -1,44 +1,14 @@
 import { useState } from 'react'
 import type { OutputFormat, VideoConversionError } from '../../shared/video-conversion'
-import type { VideoMetadata, VideoSelectionError } from '../../shared/video-metadata'
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B'
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** unitIndex
-  return `${value.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`
-}
-
-function formatDuration(duration: number | null): string {
-  if (duration === null) {
-    return '未知'
-  }
-
-  const totalSeconds = Math.max(0, Math.round(duration))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  return [hours, minutes, seconds]
-    .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, '0')))
-    .join(':')
-}
-
-function formatResolution(metadata: VideoMetadata): string {
-  return metadata.width !== null && metadata.height !== null
-    ? `${metadata.width} × ${metadata.height}`
-    : '未知'
-}
-
-function formatFrameRate(frameRate: number | null): string {
-  return frameRate === null
-    ? '未知'
-    : `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(frameRate)} fps`
-}
+import type {
+  VideoMetadata,
+  VideoSelectionError,
+  VideoSelectionResult
+} from '../../shared/video-metadata'
+import AppHeader from './components/AppHeader'
+import OutputSettingsPanel from './components/OutputSettingsPanel'
+import StatusPanel, { SelectionErrorBanner } from './components/StatusPanel'
+import VideoInputPanel from './components/VideoInputPanel'
 
 function App(): React.JSX.Element {
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null)
@@ -50,21 +20,27 @@ function App(): React.JSX.Element {
   const [conversionError, setConversionError] = useState<VideoConversionError | null>(null)
   const [convertedOutputPath, setConvertedOutputPath] = useState<string | null>(null)
 
-  const handleSelectVideo = async (): Promise<void> => {
+  const applyVideoSelectionResult = (result: VideoSelectionResult): void => {
+    if (result.status === 'success') {
+      setMetadata(result.metadata)
+      setThumbnailDataUrl(result.thumbnailDataUrl)
+      setErrorInfo(null)
+      setConversionError(null)
+      setConvertedOutputPath(null)
+    } else if (result.status === 'error') {
+      setErrorInfo(result)
+      setConversionError(null)
+      setConvertedOutputPath(null)
+    }
+  }
+
+  const loadVideo = async (loader: () => Promise<VideoSelectionResult>): Promise<void> => {
     setIsSelecting(true)
+    setErrorInfo(null)
 
     try {
-      const result = await window.videoApi.selectVideo()
-
-      if (result.status === 'success') {
-        setMetadata(result.metadata)
-        setThumbnailDataUrl(result.thumbnailDataUrl)
-        setErrorInfo(null)
-        setConversionError(null)
-        setConvertedOutputPath(null)
-      } else if (result.status === 'error') {
-        setErrorInfo(result)
-      }
+      const result = await loader()
+      applyVideoSelectionResult(result)
     } catch (error: unknown) {
       console.error('Failed to communicate with the main process:', error)
       setErrorInfo({
@@ -75,6 +51,24 @@ function App(): React.JSX.Element {
     } finally {
       setIsSelecting(false)
     }
+  }
+
+  const handleSelectVideo = (): Promise<void> => loadVideo(() => window.videoApi.selectVideo())
+
+  const handleDropVideo = (files: FileList): Promise<void> | void => {
+    if (files.length !== 1) {
+      setErrorInfo({
+        code: 'DROPPED_FILE_INVALID',
+        title: '一次只能添加一个视频',
+        message: '请只拖入一个视频文件后重试。'
+      })
+      setConversionError(null)
+      setConvertedOutputPath(null)
+      return
+    }
+
+    const file = files.item(0)
+    return file ? loadVideo(() => window.videoApi.loadDroppedVideo(file)) : undefined
   }
 
   const handleConvertVideo = async (): Promise<void> => {
@@ -103,104 +97,35 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <main className="home">
-      <h1>Desktop Video Converter</h1>
-      <p className="subtitle">桌面视频格式转换器</p>
+    <main className="app-shell">
+      <AppHeader />
 
-      <button type="button" onClick={handleSelectVideo} disabled={isSelecting || isConverting}>
-        {isSelecting ? '正在读取…' : '选择视频'}
-      </button>
+      {errorInfo && <SelectionErrorBanner error={errorInfo} hasMetadata={metadata !== null} />}
 
-      {errorInfo && (
-        <section className="error" role="alert">
-          <strong>{errorInfo.title}</strong>
-          <p>{errorInfo.message}</p>
-          {metadata && <p>当前仍显示上一次成功加载的视频信息。</p>}
-        </section>
-      )}
+      <section className="workspace" aria-label="视频转换工作区">
+        <VideoInputPanel
+          metadata={metadata}
+          thumbnailDataUrl={thumbnailDataUrl}
+          isLoading={isSelecting}
+          isBusy={isConverting}
+          onSelectVideo={handleSelectVideo}
+          onDropVideo={handleDropVideo}
+        />
+        <OutputSettingsPanel
+          metadata={metadata}
+          outputFormat={outputFormat}
+          isConverting={isConverting}
+          isLoading={isSelecting}
+          onOutputFormatChange={setOutputFormat}
+          onConvert={handleConvertVideo}
+        />
+      </section>
 
-      {metadata && (
-        <section className="preview" aria-label="视频预览">
-          {thumbnailDataUrl ? (
-            <img src={thumbnailDataUrl} alt={`${metadata.fileName} 的视频预览`} />
-          ) : (
-            <div className="preview-placeholder">无法生成视频预览</div>
-          )}
-        </section>
-      )}
-
-      {metadata && (
-        <dl className="metadata">
-          <div>
-            <dt>文件名</dt>
-            <dd>{metadata.fileName}</dd>
-          </div>
-          <div>
-            <dt>文件大小</dt>
-            <dd>{formatFileSize(metadata.fileSize)}</dd>
-          </div>
-          <div>
-            <dt>时长</dt>
-            <dd>{formatDuration(metadata.duration)}</dd>
-          </div>
-          <div>
-            <dt>分辨率</dt>
-            <dd>{formatResolution(metadata)}</dd>
-          </div>
-          <div>
-            <dt>帧率</dt>
-            <dd>{formatFrameRate(metadata.frameRate)}</dd>
-          </div>
-          <div>
-            <dt>视频编码</dt>
-            <dd>{metadata.videoCodec ?? '未知'}</dd>
-          </div>
-          <div>
-            <dt>音频编码</dt>
-            <dd>{metadata.audioCodec ?? '无音频流'}</dd>
-          </div>
-          <div>
-            <dt>容器格式</dt>
-            <dd>{metadata.container ?? '未知'}</dd>
-          </div>
-        </dl>
-      )}
-
-      {metadata && (
-        <section className="conversion" aria-label="视频格式转换">
-          <label htmlFor="output-format">目标格式</label>
-          <select
-            id="output-format"
-            value={outputFormat}
-            onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
-            disabled={isConverting}
-          >
-            <option value="mp4">MP4</option>
-            <option value="mov">MOV</option>
-            <option value="mkv">MKV</option>
-            <option value="webm">WebM</option>
-          </select>
-
-          <button type="button" onClick={handleConvertVideo} disabled={isConverting || isSelecting}>
-            {isConverting ? '正在转换…' : '开始转换'}
-          </button>
-
-          {convertedOutputPath && (
-            <div className="conversion-success" role="status">
-              <strong>转换完成</strong>
-              <p>已保存到：</p>
-              <p className="output-path">{convertedOutputPath}</p>
-            </div>
-          )}
-
-          {conversionError && (
-            <div className="error conversion-error" role="alert">
-              <strong>{conversionError.title}</strong>
-              <p>{conversionError.message}</p>
-            </div>
-          )}
-        </section>
-      )}
+      <StatusPanel
+        conversionError={conversionError}
+        convertedOutputPath={convertedOutputPath}
+        isConverting={isConverting}
+      />
     </main>
   )
 }

@@ -1,10 +1,15 @@
 import { dialog, ipcMain } from 'electron'
+import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
   isOutputFormat,
   type VideoConversionResult
 } from '../shared/video-conversion'
-import { SELECT_VIDEO_CHANNEL, type VideoSelectionResult } from '../shared/video-metadata'
+import {
+  LOAD_DROPPED_VIDEO_CHANNEL,
+  SELECT_VIDEO_CHANNEL,
+  type VideoSelectionResult
+} from '../shared/video-metadata'
 import {
   convertVideo,
   createDefaultOutputPath,
@@ -16,6 +21,8 @@ import { readVideoMetadata, VideoMetadataError } from './ffprobe'
 import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
 
 let currentVideoFilePath: string | null = null
+
+const SUPPORTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm'])
 
 function toErrorResult(error: unknown): VideoSelectionResult {
   if (error instanceof VideoMetadataError) {
@@ -44,6 +51,42 @@ function logThumbnailFailure(error: unknown): void {
   }
 
   console.error('Unexpected error while generating video thumbnail:', error)
+}
+
+function unsupportedDroppedFileResult(): VideoSelectionResult {
+  return {
+    status: 'error',
+    code: 'DROPPED_FILE_INVALID',
+    title: '不支持的文件格式',
+    message: '请选择 MP4、MOV、MKV 或 WebM 视频文件。'
+  }
+}
+
+function isSupportedVideoPath(filePath: string): boolean {
+  return SUPPORTED_VIDEO_EXTENSIONS.has(extname(filePath).toLowerCase())
+}
+
+async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult> {
+  try {
+    const metadata = await readVideoMetadata(filePath)
+    let thumbnailDataUrl: string | null = null
+
+    try {
+      thumbnailDataUrl = await generateVideoThumbnail(filePath, metadata.duration)
+    } catch (error: unknown) {
+      logThumbnailFailure(error)
+    }
+
+    currentVideoFilePath = filePath
+
+    return {
+      status: 'success',
+      metadata,
+      thumbnailDataUrl
+    }
+  } catch (error: unknown) {
+    return toErrorResult(error)
+  }
 }
 
 function toConversionErrorResult(error: unknown): VideoConversionResult {
@@ -103,27 +146,26 @@ export function registerVideoIpcHandlers(): void {
         return { status: 'cancelled' }
       }
 
-      const filePath = selection.filePaths[0]
-      const metadata = await readVideoMetadata(filePath)
-      let thumbnailDataUrl: string | null = null
-
-      try {
-        thumbnailDataUrl = await generateVideoThumbnail(filePath, metadata.duration)
-      } catch (error: unknown) {
-        logThumbnailFailure(error)
-      }
-
-      currentVideoFilePath = filePath
-
-      return {
-        status: 'success',
-        metadata,
-        thumbnailDataUrl
-      }
+      return loadVideoFromPath(selection.filePaths[0])
     } catch (error: unknown) {
       return toErrorResult(error)
     }
   })
+
+  ipcMain.handle(
+    LOAD_DROPPED_VIDEO_CHANNEL,
+    async (_event, filePath: unknown): Promise<VideoSelectionResult> => {
+      if (
+        typeof filePath !== 'string' ||
+        filePath.length === 0 ||
+        !isSupportedVideoPath(filePath)
+      ) {
+        return unsupportedDroppedFileResult()
+      }
+
+      return loadVideoFromPath(filePath)
+    }
+  )
 
   ipcMain.handle(
     CONVERT_VIDEO_CHANNEL,

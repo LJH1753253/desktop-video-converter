@@ -14,12 +14,19 @@ export interface VideoMetadata {
   bitRate: number | null
 }
 
+export interface DroppedVideoFile {
+  name: string
+  size: number
+  type: string
+}
+
 export type VideoSelectionErrorCode =
   | 'FILE_ACCESS_FAILED'
   | 'FFPROBE_START_FAILED'
   | 'FFPROBE_EXIT_FAILED'
   | 'FFPROBE_INVALID_JSON'
   | 'VIDEO_STREAM_NOT_FOUND'
+  | 'DROPPED_FILE_INVALID'
   | 'UNKNOWN'
 
 export interface VideoSelectionError {
@@ -35,7 +42,9 @@ export type VideoSelectionResult =
 
 export interface VideoApi {
   selectVideo: () => Promise<VideoSelectionResult>
+  loadDroppedVideo: (file: DroppedVideoFile) => Promise<VideoSelectionResult>
   convertVideo: (targetFormat: OutputFormat) => Promise<VideoConversionResult>
 }
 
 export const SELECT_VIDEO_CHANNEL = 'video:select' as const
+export const LOAD_DROPPED_VIDEO_CHANNEL = 'video:load-dropped' as const
