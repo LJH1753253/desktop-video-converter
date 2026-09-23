@@ -173,6 +173,13 @@ function App(): React.JSX.Element {
 
       {errorInfo && <SelectionErrorBanner error={errorInfo} hasMetadata={metadata !== null} />}
 
+      <StatusPanel
+        conversionError={conversionError}
+        convertedOutputPath={convertedOutputPath}
+        conversionCancelled={false}
+        isGlobal
+      />
+
       <section className="workspace" aria-label="视频转换工作区">
         <VideoInputPanel
           metadata={metadata}
@@ -198,8 +205,8 @@ function App(): React.JSX.Element {
       </section>
 
       <StatusPanel
-        conversionError={conversionError}
-        convertedOutputPath={convertedOutputPath}
+        conversionError={null}
+        convertedOutputPath={null}
         conversionCancelled={conversionCancelled}
       />
     </main>

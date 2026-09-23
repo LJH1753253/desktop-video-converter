@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { link, rename, stat, unlink } from 'node:fs/promises'
-import { join, parse } from 'node:path'
+import { constants, type Stats } from 'node:fs'
+import { access, link, rename, stat, unlink } from 'node:fs/promises'
+import { dirname, join, parse } from 'node:path'
 import type { OutputFormat, VideoConversionErrorCode } from '../shared/video-conversion'
 
 export type CommitMode = 'create' | 'replace'
@@ -14,7 +15,7 @@ export interface FileIdentitySnapshot {
 
 type OutputStagingErrorCode = Extract<
   VideoConversionErrorCode,
-  'OUTPUT_CONFLICT' | 'OUTPUT_COMMIT_FAILED' | 'OUTPUT_REPLACE_FAILED'
+  'OUTPUT_PATH_UNAVAILABLE' | 'OUTPUT_CONFLICT' | 'OUTPUT_COMMIT_FAILED' | 'OUTPUT_REPLACE_FAILED'
 >
 
 export class OutputStagingError extends Error {
@@ -33,6 +34,13 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function isMissingFileError(error: unknown): boolean {
   return isNodeError(error) && error.code === 'ENOENT'
+}
+
+function outputPathUnavailable(operation: string, filePath: string, error: unknown): never {
+  throw new OutputStagingError(
+    'OUTPUT_PATH_UNAVAILABLE',
+    `${operation} failed for ${filePath}: ${String(error)}`
+  )
 }
 
 function padTwo(value: number): string {
@@ -60,7 +68,32 @@ export async function getFileIdentity(filePath: string): Promise<FileIdentitySna
       return null
     }
 
-    throw error
+    outputPathUnavailable('Output path inspection', filePath, error)
+  }
+}
+
+export async function validateOutputDirectory(finalOutputPath: string): Promise<void> {
+  const outputDirectory = dirname(finalOutputPath)
+
+  let directoryStats: Stats
+  try {
+    directoryStats = await stat(outputDirectory)
+  } catch (error: unknown) {
+    outputPathUnavailable('Output directory inspection', outputDirectory, error)
+  }
+
+  if (!directoryStats.isDirectory()) {
+    outputPathUnavailable(
+      'Output directory validation',
+      outputDirectory,
+      new Error('The output parent path is not a directory.')
+    )
+  }
+
+  try {
+    await access(outputDirectory, constants.W_OK)
+  } catch (error: unknown) {
+    outputPathUnavailable('Output directory write access check', outputDirectory, error)
   }
 }
 

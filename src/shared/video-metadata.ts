@@ -33,6 +33,7 @@ export type VideoSelectionErrorCode =
   | 'FFPROBE_INVALID_JSON'
   | 'VIDEO_STREAM_NOT_FOUND'
   | 'DROPPED_FILE_INVALID'
+  | 'DROPPED_FOLDER'
   | 'UNKNOWN'
 
 export interface VideoSelectionError {

@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron'
+import { stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
@@ -32,13 +33,21 @@ import {
   createTimestampedDefaultPath,
   getFileIdentity,
   OutputStagingError,
-  type CommitMode
+  type CommitMode,
+  validateOutputDirectory
 } from './output-staging'
 import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
 
 interface CurrentVideo {
   filePath: string
   duration: number | null
+}
+
+class InputFileUnavailableError extends Error {
+  constructor(readonly technicalDetails: string) {
+    super('The input video is unavailable.')
+    this.name = 'InputFileUnavailableError'
+  }
 }
 
 type ActiveConversionPhase = 'preparing' | 'running' | 'cancelling' | 'committing' | 'completed'
@@ -102,6 +111,52 @@ function isSupportedVideoPath(filePath: string): boolean {
   return SUPPORTED_VIDEO_EXTENSIONS.has(extname(filePath).toLowerCase())
 }
 
+async function assertInputFileAvailable(filePath: string): Promise<void> {
+  try {
+    const fileStats = await stat(filePath)
+    if (!fileStats.isFile()) {
+      throw new Error('The input path is not a regular file.')
+    }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new InputFileUnavailableError(`Input file validation failed for ${filePath}: ${detail}`)
+  }
+}
+
+async function validateDroppedVideoPath(filePath: string): Promise<VideoSelectionResult | null> {
+  try {
+    const fileStats = await stat(filePath)
+
+    if (fileStats.isDirectory()) {
+      return {
+        status: 'error',
+        code: 'DROPPED_FOLDER',
+        title: '无法添加文件夹',
+        message: '请拖入一个 MP4、MOV、MKV 或 WebM 视频文件。'
+      }
+    }
+
+    if (!fileStats.isFile()) {
+      return {
+        status: 'error',
+        code: 'FILE_ACCESS_FAILED',
+        title: '无法访问该文件',
+        message: '拖入的路径不是有效文件，请重新选择视频。'
+      }
+    }
+  } catch (error: unknown) {
+    console.error('Unable to inspect dropped path:', error)
+    return {
+      status: 'error',
+      code: 'FILE_ACCESS_FAILED',
+      title: '无法访问该文件',
+      message: '拖入的文件无法读取，请确认文件仍然存在且可访问。'
+    }
+  }
+
+  return null
+}
+
 async function cleanupConversionArtifacts(task: ActiveConversion): Promise<void> {
   await cleanupStagedFile(task.tempOutputPath)
   await cleanupStagedFile(task.backupPath)
@@ -134,8 +189,27 @@ async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult
 }
 
 function toConversionErrorResult(error: unknown): VideoConversionResult {
+  if (error instanceof InputFileUnavailableError) {
+    console.error(`[INPUT_FILE_UNAVAILABLE] ${error.technicalDetails}`)
+    return {
+      status: 'error',
+      code: 'INPUT_FILE_UNAVAILABLE',
+      title: '无法访问原视频',
+      message: '原视频可能已被移动或删除，请重新选择视频后再试。'
+    }
+  }
+
   if (error instanceof OutputStagingError) {
     console.error(`[${error.code}] ${error.technicalDetails}`)
+
+    if (error.code === 'OUTPUT_PATH_UNAVAILABLE') {
+      return {
+        status: 'error',
+        code: error.code,
+        title: '无法保存转换结果',
+        message: '请选择其他保存位置，或确认当前文件夹可写后重试。'
+      }
+    }
 
     if (error.code === 'OUTPUT_CONFLICT') {
       return {
@@ -228,11 +302,16 @@ export function registerVideoIpcHandlers(): void {
   ipcMain.handle(
     LOAD_DROPPED_VIDEO_CHANNEL,
     async (_event, filePath: unknown): Promise<VideoSelectionResult> => {
-      if (
-        typeof filePath !== 'string' ||
-        filePath.length === 0 ||
-        !isSupportedVideoPath(filePath)
-      ) {
+      if (typeof filePath !== 'string' || filePath.length === 0 || filePath.trim().length === 0) {
+        return unsupportedDroppedFileResult()
+      }
+
+      const droppedPathError = await validateDroppedVideoPath(filePath)
+      if (droppedPathError !== null) {
+        return droppedPathError
+      }
+
+      if (!isSupportedVideoPath(filePath)) {
         return unsupportedDroppedFileResult()
       }
 
@@ -316,6 +395,7 @@ export function registerVideoIpcHandlers(): void {
       event.sender.once('destroyed', onSenderDestroyed)
 
       try {
+        await assertInputFileAvailable(inputPath)
         const defaultPath = await createTimestampedDefaultPath(inputPath, targetFormat)
 
         if (task.controller.signal.aborted) {
@@ -349,7 +429,9 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
+        await assertInputFileAvailable(inputPath)
         assertOutputPathDiffersFromInput(inputPath, saveResult.filePath)
+        await validateOutputDirectory(saveResult.filePath)
 
         const originalIdentity = await getFileIdentity(saveResult.filePath)
         const commitMode: CommitMode = originalIdentity === null ? 'create' : 'replace'
@@ -423,7 +505,21 @@ export function registerVideoIpcHandlers(): void {
       } catch (error: unknown) {
         task.phase = 'completed'
         await cleanupConversionArtifacts(task)
-        return toConversionErrorResult(error)
+
+        let classifiedError = error
+        if (
+          error instanceof VideoConversionProcessError &&
+          error.code === 'FFMPEG_EXIT_FAILED' &&
+          task.finalOutputPath !== null
+        ) {
+          try {
+            await validateOutputDirectory(task.finalOutputPath)
+          } catch (directoryError: unknown) {
+            classifiedError = directoryError
+          }
+        }
+
+        return toConversionErrorResult(classifiedError)
       } finally {
         event.sender.removeListener('destroyed', onSenderDestroyed)
         if (activeConversion === task) {

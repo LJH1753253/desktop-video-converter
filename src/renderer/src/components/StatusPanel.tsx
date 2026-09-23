@@ -5,16 +5,20 @@ interface StatusPanelProps {
   conversionError: VideoConversionError | null
   convertedOutputPath: string | null
   conversionCancelled: boolean
+  isGlobal?: boolean
 }
 
 function StatusPanel({
   conversionError,
   convertedOutputPath,
-  conversionCancelled
+  conversionCancelled,
+  isGlobal = false
 }: StatusPanelProps): React.JSX.Element | null {
+  const globalClassName = isGlobal ? ' global-status-banner' : ''
+
   if (conversionError) {
     return (
-      <section className="status-panel status-error" role="alert">
+      <section className={`status-panel status-error${globalClassName}`} role="alert">
         <span className="status-icon" aria-hidden="true">
           !
         </span>
@@ -28,13 +32,17 @@ function StatusPanel({
 
   if (convertedOutputPath) {
     return (
-      <section className="status-panel status-success" role="status" aria-live="polite">
+      <section
+        className={`status-panel status-success${globalClassName}`}
+        role="status"
+        aria-live="polite"
+      >
         <span className="status-icon" aria-hidden="true">
           ✓
         </span>
         <div>
           <strong>转换完成</strong>
-          <p>已保存到：</p>
+          <p>视频已成功保存到：</p>
           <p className="status-path">{convertedOutputPath}</p>
         </div>
       </section>
