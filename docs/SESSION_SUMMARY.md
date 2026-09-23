@@ -541,3 +541,243 @@ Renderer 状态为 `converting → cancelling → cancelled / success / error`�
 - 最终 README、文档审阅、GitHub 交付和面试材料整理。
 
 批量转换、ETA、云功能、数据库、GPU 加速等仍不在当前范围内。
+
+## 14. Phase 3.1：最终交付与 Windows Packaging 审计
+
+Phase 2 功能封存后，对当前 Electron 项目的最终交付能力进行了审计。
+
+审计确认：
+
+- 项目已经包含 `electron-builder` 和 NSIS 配置基础；
+- 开发态 FFmpeg / ffprobe 依赖系统 `PATH`；
+- 如果 packaged app 不携带 FFmpeg / ffprobe，普通用户机器上无法独立完成视频读取和转换；
+- 当前正式交付目标明确为 Windows x64；
+- 继续使用 electron-builder，不切换到其他 packaging framework。
+
+## 15. Phase 3.2A：统一 Media Binary Resolver
+
+新增：
+
+```text
+src/main/media-binaries.ts
+```
+
+resolver 规则：
+
+- 开发态返回 `ffmpeg` 和 `ffprobe`，继续使用系统 `PATH`；
+- packaged 环境返回：
+  - `process.resourcesPath/ffmpeg/ffmpeg.exe`；
+  - `process.resourcesPath/ffmpeg/ffprobe.exe`。
+
+`ffprobe.ts`、`thumbnail.ts` 和 `converter.ts` 中原先直接使用的 binary 名称统一改为调用 resolver。原有 `shell:false`、FFmpeg 参数、Progress、Cancel 和 staged output 均保持不变。
+
+开发态回归验证了 metadata、thumbnail、conversion、Progress 和 success/final path。
+
+对应提交：
+
+```text
+74b40d7 refactor: centralize media binary paths
+```
+
+## 16. Phase 3.2B：Bundled FFmpeg 与 Packaging 资源
+
+### Binary 决策与人工核验
+
+最终选择的目标 binary 为：
+
+- FFmpeg 9.0.2；
+- Gyan `essentials_build-www.gyan.dev`；
+- Windows x64。
+
+开发者从 Gyan 官方 build 获取 ZIP，并完成 SHA256 校验：
+
+```text
+60F467265B1E312373DBCD92200C2618A74850F98D3D078E94296BB3FA2047BA
+```
+
+开发者实际执行 `ffmpeg.exe -version` 和 `ffprobe.exe -version`，确认版本为 `9.0.2-essentials_build-www.gyan.dev`，并验证了：
+
+- `libx264`；
+- `libvpx-vp9`；
+- AAC；
+- `libopus`。
+
+binary 大小为：
+
+```text
+ffmpeg.exe   105423872 bytes
+ffprobe.exe  105221120 bytes
+```
+
+实际包内发现 `LICENSE` 和 `README.txt`。其中 `README.txt` 记录了 GPL v3 以及 source revision：
+
+```text
+https://github.com/FFmpeg/FFmpeg/commit/946fcce07b
+```
+
+### Packaging 策略
+
+由于两个 exe 均超过 GitHub 普通 Git blob 的单文件限制：
+
+- binary 不进入源码 Git；
+- `.gitignore` 精确忽略 `resources/ffmpeg/*.exe`；
+- license 文本保留在资源目录并允许进入 Git；
+- 本地 packaging 时 binary 仍放在 `resources/ffmpeg`。
+
+`electron-builder.yml` 在 `files` 中排除：
+
+```text
+!resources/ffmpeg/**
+```
+
+并使用：
+
+```yaml
+extraResources:
+  - from: resources/ffmpeg
+    to: ffmpeg
+```
+
+这样 FFmpeg 不会同时进入 `app.asar` / `app.asar.unpacked` 和 `extraResources`，最终 packaged 路径为：
+
+```text
+process.resourcesPath/ffmpeg/ffmpeg.exe
+process.resourcesPath/ffmpeg/ffprobe.exe
+```
+
+`THIRD_PARTY_NOTICES.md` 记录了 binary 来源、SHA256、版本、能力、GPLv3 标识、source revision 以及 CLI `spawn` 调用方式。
+
+对应提交：
+
+```text
+94ddbf5 build: bundle ffmpeg resources for Windows packaging
+```
+
+## 17. Unpacked Build 与 PATH 隔离验证
+
+执行：
+
+```text
+npm run build:unpack
+```
+
+成功生成：
+
+```text
+dist/win-unpacked/
+dist/win-unpacked/desktop-video-converter.exe
+```
+
+packaged resources 中确认存在：
+
+```text
+resources/ffmpeg/ffmpeg.exe
+resources/ffmpeg/ffprobe.exe
+resources/ffmpeg/licenses/LICENSE
+resources/ffmpeg/licenses/README.txt
+```
+
+整个 unpacked 目录中没有发现第二份 FFmpeg binary。
+
+开发者进一步创建只保留 Windows 系统目录的临时 PowerShell `PATH`，确认 `where.exe ffmpeg` 和 `where.exe ffprobe` 均无法找到系统 FFmpeg。随后从该环境启动 unpacked app，并人工验证了 metadata、thumbnail、conversion、Progress 和 final output 均正常。
+
+该验证确认 packaged app 在系统 `PATH` 无法提供 FFmpeg / ffprobe 的条件下仍可正常完成媒体处理流程，与 packaged resolver 的 bundled binary 路径设计一致。
+
+## 18. Phase 3.3：NSIS Installer 与安装版验收
+
+执行：
+
+```text
+npm run build:win
+```
+
+成功生成：
+
+```text
+dist/desktop-video-converter-1.0.0-setup.exe
+```
+
+安装包大小为：
+
+```text
+149944621 bytes
+```
+
+当前 NSIS 配置和验收目标为：
+
+- Windows x64；
+- `oneClick=true`；
+- `perMachine=false`。
+
+开发者使用 `Get-AuthenticodeSignature` 检查安装包，结果为：
+
+```text
+NotSigned
+```
+
+因此安装包当前未进行 Authenticode 代码签名。electron-builder 日志中的 `signing with signtool.exe` 不作为最终文件已签名的依据。
+
+开发者实际完成安装版人工验收：
+
+- 双击 NSIS installer；
+- 正常安装；
+- 从桌面快捷方式启动 Desktop Video Converter；
+- metadata 正常；
+- thumbnail 正常；
+- conversion 正常；
+- Progress 正常；
+- final output 正常。
+
+安装版人工验收通过。
+
+## 19. Phase 3.4：README 与真实应用截图
+
+最终保留了五张真实应用截图：
+
+```text
+docs/screenshots/
+  01-主界面-初始化.png
+  02-主界面-已选中视频.png
+  03-视频转换中.png
+  04-转换成功.png
+  05-友好错误状态.png
+```
+
+README 已从 electron-vite scaffold 改写为中文项目主页，包含：
+
+- 项目功能；
+- 界面截图；
+- 技术栈；
+- Renderer / Preload / IPC / Main 架构；
+- 安全边界；
+- 转换配置；
+- 开发模式；
+- Windows packaging；
+- bundled FFmpeg；
+- Windows 交付状态；
+- 项目结构；
+- AI-assisted development 工程决策；
+- 开发记录和测试文档入口。
+
+README 明确说明：开发模式依赖系统 `PATH` 中的 ffmpeg / ffprobe，Windows packaged app 使用 bundled binary，当前实际验证平台为 Windows x64，安装包尚未代码签名。
+
+## 20. Phase 3 的开发者主导与 AI 辅助工作流
+
+开发者负责：
+
+- 需求拆解、技术选型和架构约束；
+- 功能范围和 FFmpeg 集成方案；
+- Renderer / Preload / IPC / Main 安全边界；
+- staged output、输出冲突保护和失败恢复策略；
+- packaging 方案、binary 来源和 SHA256 校验；
+- diff review、人工测试和 installer 验收；
+- 根据真实测试结果决定是否接受每个阶段的修改。
+
+AI coding assistant 主要用于：
+
+- 局部代码实现；
+- 静态审计；
+- 辅助修改；
+- 工程文档整理。
+
+项目采用 developer-led、AI-assisted 的工程方式推进；AI 输出始终处于明确任务边界、依赖审批、diff review 和人工运行验收之下。

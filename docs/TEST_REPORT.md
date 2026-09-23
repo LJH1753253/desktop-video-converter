@@ -651,9 +651,223 @@ Balanced 输出观察到的 AAC 实际 bitrate 不一定精确等于 128k；该�
 
 原生 Save Dialog 在路径返回 Main 前显示“你没有权限在此位置保存文件。”因此本次测试确认了 Windows 原生权限保护，但没有把它记录为应用层 `OUTPUT_PATH_UNAVAILABLE` UI 已被直接触发。
 
+### T48 Phase 3.2A Media Binary Resolver 开发态回归
+
+开发者执行 `npm run dev`，在 resolver 接入后人工验证：
+
+- 正常视频 metadata 加载；
+- thumbnail 生成；
+- 视频转换；
+- Progress；
+- success 和 final path。
+
+结果：通过。
+
+这是开发态人工回归；此时 FFmpeg / ffprobe 仍由系统 `PATH` 提供。开发态 resolver 返回 `ffmpeg` 和 `ffprobe`，packaged resolver 则预留 `process.resourcesPath/ffmpeg/` 路径。
+
+### T49 FFmpeg Essentials 下载完整性与来源校验
+
+开发者对 FFmpeg 9.0.2 Gyan `essentials_build-www.gyan.dev` Windows x64 ZIP 执行 SHA256 校验。
+
+结果：通过。
+
+```text
+60F467265B1E312373DBCD92200C2618A74850F98D3D078E94296BB3FA2047BA
+```
+
+该 hash 与官方提供的 checksum 一致。报告不记录开发者本地 Backup 下载路径作为项目依赖路径。
+
+### T50 Bundled FFmpeg Binary 能力核验
+
+开发者实际执行 `ffmpeg.exe -version` 和 `ffprobe.exe -version`，确认版本为 `9.0.2-essentials_build-www.gyan.dev`，并验证以下编码能力：
+
+- `libx264`；
+- `libvpx-vp9`；
+- AAC；
+- `libopus`。
+
+实际 binary 大小：
+
+```text
+ffmpeg.exe   105423872 bytes
+ffprobe.exe  105221120 bytes
+```
+
+实际包内发现 `LICENSE` 和 `README.txt`。其中 `README.txt` 记录 License: GPL v3 以及 source revision：
+
+```text
+https://github.com/FFmpeg/FFmpeg/commit/946fcce07b
+```
+
+结果：通过。
+
+### T51 Git Binary 排除与 Packaging 资源配置
+
+这是静态 / Git 配置检查，不是运行时测试。
+
+开发者通过 `git check-ignore` 确认：
+
+```text
+resources/ffmpeg/ffmpeg.exe
+resources/ffmpeg/ffprobe.exe
+```
+
+均被以下规则忽略：
+
+```text
+resources/ffmpeg/*.exe
+```
+
+license 文件没有被 ignore。
+
+同时确认 electron-builder 配置包含：
+
+```yaml
+files:
+  - '!resources/ffmpeg/**'
+
+extraResources:
+  - from: resources/ffmpeg
+    to: ffmpeg
+```
+
+目标是避免 binary 同时进入 app files / ASAR 和 extraResources。
+
+结果：通过。
+
+### T52 Windows Unpacked Build 与资源完整性
+
+开发者执行：
+
+```text
+npm run build:unpack
+```
+
+结果：通过。
+
+实际输出：
+
+```text
+dist/win-unpacked/
+dist/win-unpacked/desktop-video-converter.exe
+```
+
+确认 packaged resources：
+
+```text
+dist/win-unpacked/resources/ffmpeg/ffmpeg.exe
+dist/win-unpacked/resources/ffmpeg/ffprobe.exe
+dist/win-unpacked/resources/ffmpeg/licenses/LICENSE
+dist/win-unpacked/resources/ffmpeg/licenses/README.txt
+```
+
+其中：
+
+```text
+ffmpeg.exe：105423872 bytes
+SHA256：3256173F3F8BFFD7DF12227C68ADF68025EDB1832273A9530688A7BB1ED8EDEC
+
+ffprobe.exe：105221120 bytes
+SHA256：F0D36ECBBDD3BCFAC3EFA078C96C7271C2E68B3810595552AC3B7F17E9A65C52
+```
+
+检查整个 unpacked 输出后，没有发现第二份 `ffmpeg.exe` / `ffprobe.exe`，即没有 duplicate bundled FFmpeg binary。
+
+### T53 Packaged App PATH 隔离运行测试
+
+开发者新建 PowerShell 会话，将当前进程的 `PATH` 临时限制为 Windows 系统目录。随后确认：
+
+```text
+where.exe ffmpeg
+where.exe ffprobe
+```
+
+均无法找到系统 FFmpeg。
+
+在该环境中启动：
+
+```text
+dist/win-unpacked/desktop-video-converter.exe
+```
+
+人工验证结果：
+
+- metadata 正常；
+- thumbnail 正常；
+- conversion 正常；
+- Progress 正常；
+- final output 正常。
+
+结果：通过。
+
+结论保持严谨：在系统 PATH 无法提供 FFmpeg / ffprobe 的条件下，packaged app 仍能正常完成媒体处理流程，与 bundled resolver 路径设计一致。
+
+### T54 Windows NSIS Installer 构建
+
+开发者执行：
+
+```text
+npm run build:win
+```
+
+其中 `npm run build`、typecheck 和 electron-vite build 均成功。electron-builder 成功生成：
+
+```text
+dist/desktop-video-converter-1.0.0-setup.exe
+```
+
+安装包大小：
+
+```text
+149944621 bytes
+```
+
+配置和目标为：
+
+- Windows x64；
+- NSIS；
+- `oneClick=true`；
+- `perMachine=false`。
+
+结果：通过。
+
+### T55 Authenticode 状态检查
+
+开发者对以下文件执行 `Get-AuthenticodeSignature`：
+
+```text
+dist/desktop-video-converter-1.0.0-setup.exe
+```
+
+实际结果：
+
+```text
+Status: NotSigned
+```
+
+结果：状态检查完成，安装包当前未进行 Authenticode 代码签名。该结果是已确认的交付状态，不作为功能失败。electron-builder 日志中的 `signing with signtool.exe` 不被解释为最终文件已签名。
+
+### T56 实际安装版人工验收
+
+开发者实际操作：
+
+1. 双击 NSIS installer；
+2. 正常完成安装；
+3. 从桌面快捷方式启动 Desktop Video Converter；
+4. 加载视频；
+5. 验证 metadata；
+6. 验证 thumbnail；
+7. 验证 conversion；
+8. 验证 Progress；
+9. 验证 final output。
+
+结果：通过。
+
+测试对象是实际安装后的应用，不是 `npm run dev`，也不是 `dist/win-unpacked`；这是最终 Windows 安装版人工验收。
+
 ## 2. 自动检查
 
-以下为 Codex 在各阶段自动/代理环境中执行的检查；本次文档更新没有重新执行代码检查：
+以下为各阶段实际执行的自动检查与构建命令；本次文档更新本身没有重新执行代码检查：
 
 这些命令在多个开发阶段重复执行并通过：
 
@@ -662,17 +876,25 @@ Balanced 输出观察到的 AAC 实际 bitrate 不一定精确等于 128k；该�
 - ESLint：通过
 - electron-vite build：通过
 
+Phase 3 中另外执行并通过：
+
+- `npm run build:unpack`；
+- `npm run build:win`。
+
 这些结果属于自动检查，不等同于开发者人工 UI 测试。
 
 ## 3. 当前未测试 / 后续测试
 
 以下项目在本轮没有被记录为已完成测试：
 
-- Windows 安装包 / 最终打包；
-- FFmpeg / ffprobe 随应用分发；
-- 干净机器上的安装后验证；
+- Authenticode code signing；
+- Windows clean-machine / 第二台完全干净设备测试；
+- macOS 安装测试；
+- Linux 安装测试；
 - 更大规模或长时长压力测试；
 - 网络盘、非 NTFS 环境下 hard-link 兼容性；
-- Phase 3 最终交付验证、README 和文档最终审阅。
+- 其他未覆盖的跨平台安装场景。
 
 批量转换不属于当前产品范围，不作为本阶段测试目标。
+
+README 和 5 张应用截图属于交付材料，不作为运行时测试编号；截图来自实际应用运行流程。
