@@ -6,6 +6,9 @@ dist/
 out/
 release/
 
+# Bundled FFmpeg binaries (keep accompanying license text trackable)
+resources/ffmpeg/*.exe
+
 # Environment variables
 .env
 .env.*
