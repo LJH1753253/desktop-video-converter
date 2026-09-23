@@ -3,6 +3,7 @@ import type { Stats } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { VideoMetadata, VideoSelectionErrorCode } from '../shared/video-metadata'
+import { getFfprobePath } from './media-binaries'
 
 interface TechnicalMetadata {
   duration: number | null
@@ -193,7 +194,7 @@ function runFfprobe(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
-    const ffprobe = spawn('ffprobe', args, {
+    const ffprobe = spawn(getFfprobePath(), args, {
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { getFfmpegPath } from './media-binaries'
 
 export class ThumbnailGenerationError extends Error {
   constructor(readonly technicalDetails: string) {
@@ -40,7 +41,7 @@ export function generateVideoThumbnail(filePath: string, duration: number | null
   return new Promise((resolve, reject) => {
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
-    const ffmpeg = spawn('ffmpeg', args, {
+    const ffmpeg = spawn(getFfmpegPath(), args, {
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']

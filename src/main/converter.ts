@@ -6,6 +6,7 @@ import type {
   QualityPreset,
   VideoConversionErrorCode
 } from '../shared/video-conversion'
+import { getFfmpegPath } from './media-binaries'
 
 interface ConversionProfile {
   label: string
@@ -252,7 +253,7 @@ export function convertVideo(
       return
     }
 
-    const ffmpeg = spawn('ffmpeg', args, {
+    const ffmpeg = spawn(getFfmpegPath(), args, {
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
