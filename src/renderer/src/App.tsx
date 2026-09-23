@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   ConversionProgress,
   OutputFormat,
@@ -24,23 +24,39 @@ function App(): React.JSX.Element {
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('balanced')
   const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null)
   const [isConverting, setIsConverting] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [conversionCancelled, setConversionCancelled] = useState(false)
   const [conversionError, setConversionError] = useState<VideoConversionError | null>(null)
   const [convertedOutputPath, setConvertedOutputPath] = useState<string | null>(null)
 
-  useEffect(() => window.videoApi.onConversionProgress(setConversionProgress), [])
+  const acceptProgressRef = useRef(false)
+
+  useEffect(
+    () =>
+      window.videoApi.onConversionProgress((progress) => {
+        if (acceptProgressRef.current) {
+          setConversionProgress(progress)
+        }
+      }),
+    []
+  )
 
   const applyVideoSelectionResult = (result: VideoSelectionResult): void => {
     if (result.status === 'success') {
+      acceptProgressRef.current = false
       setMetadata(result.metadata)
       setThumbnailDataUrl(result.thumbnailDataUrl)
       setErrorInfo(null)
       setConversionProgress(null)
       setConversionError(null)
+      setConversionCancelled(false)
       setConvertedOutputPath(null)
     } else if (result.status === 'error') {
+      acceptProgressRef.current = false
       setErrorInfo(result)
       setConversionProgress(null)
       setConversionError(null)
+      setConversionCancelled(false)
       setConvertedOutputPath(null)
     }
   }
@@ -54,6 +70,7 @@ function App(): React.JSX.Element {
       applyVideoSelectionResult(result)
     } catch (error: unknown) {
       console.error('Failed to communicate with the main process:', error)
+      acceptProgressRef.current = false
       setErrorInfo({
         code: 'UNKNOWN',
         title: '无法读取该视频',
@@ -75,6 +92,7 @@ function App(): React.JSX.Element {
       })
       setConversionProgress(null)
       setConversionError(null)
+      setConversionCancelled(false)
       setConvertedOutputPath(null)
       return
     }
@@ -84,23 +102,35 @@ function App(): React.JSX.Element {
   }
 
   const handleConvertVideo = async (): Promise<void> => {
+    acceptProgressRef.current = true
     setIsConverting(true)
+    setIsCancelling(false)
     setConversionProgress(null)
     setConversionError(null)
+    setConversionCancelled(false)
     setConvertedOutputPath(null)
 
     try {
       const result = await window.videoApi.convertVideo(outputFormat, qualityPreset)
 
       if (result.status === 'success') {
+        acceptProgressRef.current = false
         setConversionProgress({ percent: 100, processedSeconds: null })
         setConvertedOutputPath(result.outputPath)
+      } else if (result.status === 'cancelled') {
+        acceptProgressRef.current = false
+        setConversionProgress(null)
+        if (result.reason === 'user') {
+          setConversionCancelled(true)
+        }
       } else if (result.status === 'error') {
+        acceptProgressRef.current = false
         setConversionProgress(null)
         setConversionError(result)
       }
     } catch (error: unknown) {
       console.error('Failed to communicate with the main process:', error)
+      acceptProgressRef.current = false
       setConversionError({
         code: 'UNKNOWN',
         title: '视频转换失败',
@@ -109,6 +139,28 @@ function App(): React.JSX.Element {
       setConversionProgress(null)
     } finally {
       setIsConverting(false)
+      setIsCancelling(false)
+    }
+  }
+
+  const handleCancelConversion = async (): Promise<void> => {
+    if (!isConverting || isCancelling) {
+      return
+    }
+
+    acceptProgressRef.current = false
+    setIsCancelling(true)
+
+    try {
+      await window.videoApi.cancelConversion()
+    } catch (error: unknown) {
+      console.error('Failed to communicate with the main process:', error)
+      setIsCancelling(false)
+      setConversionError({
+        code: 'UNKNOWN',
+        title: '无法取消转换',
+        message: '无法与主进程通信，请等待当前转换完成。'
+      })
     }
   }
 
@@ -133,14 +185,20 @@ function App(): React.JSX.Element {
           qualityPreset={qualityPreset}
           conversionProgress={conversionProgress}
           isConverting={isConverting}
+          isCancelling={isCancelling}
           isLoading={isSelecting}
           onOutputFormatChange={setOutputFormat}
           onQualityPresetChange={setQualityPreset}
           onConvert={handleConvertVideo}
+          onCancel={handleCancelConversion}
         />
       </section>
 
-      <StatusPanel conversionError={conversionError} convertedOutputPath={convertedOutputPath} />
+      <StatusPanel
+        conversionError={conversionError}
+        convertedOutputPath={convertedOutputPath}
+        conversionCancelled={conversionCancelled}
+      />
     </main>
   )
 }

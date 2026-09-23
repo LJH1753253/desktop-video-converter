@@ -86,6 +86,8 @@ export class VideoConversionProcessError extends Error {
   }
 }
 
+export type ConversionCompletion = { status: 'success' } | { status: 'cancelled' }
+
 export function getConversionFormatLabel(format: OutputFormat): string {
   return CONVERSION_PROFILES[format].label
 }
@@ -184,8 +186,9 @@ export function convertVideo(
   format: OutputFormat,
   qualityPreset: QualityPreset,
   duration: number | null,
-  onProgress: ConversionProgressCallback
-): Promise<void> {
+  onProgress: ConversionProgressCallback,
+  signal: AbortSignal
+): Promise<ConversionCompletion> {
   if (isSameFilePath(inputPath, outputPath)) {
     throw new VideoConversionProcessError(
       'OUTPUT_MATCHES_INPUT',
@@ -214,11 +217,69 @@ export function convertVideo(
   return new Promise((resolveConversion, rejectConversion) => {
     const stderr: Buffer[] = []
     const progressParser = createProgressParser(duration, onProgress)
+    let abortRequested = signal.aborted
+    let settled = false
+    let processClosed = false
+    let startError: Error | null = null
+    let abortListener: (() => void) | null = null
+
+    const cleanupAbortListener = (): void => {
+      if (abortListener !== null) {
+        signal.removeEventListener('abort', abortListener)
+        abortListener = null
+      }
+    }
+
+    const resolveOnce = (completion: ConversionCompletion): void => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanupAbortListener()
+      resolveConversion(completion)
+    }
+
+    const rejectOnce = (error: VideoConversionProcessError): void => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanupAbortListener()
+      rejectConversion(error)
+    }
+
+    if (signal.aborted) {
+      resolveOnce({ status: 'cancelled' })
+      return
+    }
+
     const ffmpeg = spawn('ffmpeg', args, {
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
     })
+
+    abortListener = (): void => {
+      if (settled || processClosed) {
+        return
+      }
+
+      abortRequested = true
+
+      if (ffmpeg.exitCode !== null || ffmpeg.signalCode !== null || ffmpeg.killed) {
+        return
+      }
+
+      try {
+        ffmpeg.kill()
+      } catch (error: unknown) {
+        console.warn('Unable to terminate ffmpeg after cancellation request:', error)
+      }
+    }
+
+    signal.addEventListener('abort', abortListener, { once: true })
 
     ffmpeg.stdout.on('data', (chunk: Buffer) => {
       progressParser.push(chunk)
@@ -229,7 +290,13 @@ export function convertVideo(
     })
 
     ffmpeg.once('error', (error) => {
-      rejectConversion(
+      startError = error
+
+      if (abortRequested) {
+        return
+      }
+
+      rejectOnce(
         new VideoConversionProcessError(
           'FFMPEG_START_FAILED',
           `Failed to start ffmpeg: ${error.message}`
@@ -238,12 +305,33 @@ export function convertVideo(
     })
 
     ffmpeg.once('close', (exitCode, signal) => {
+      processClosed = true
+
+      if (settled) {
+        return
+      }
+
       progressParser.flush()
+
+      if (abortRequested) {
+        resolveOnce({ status: 'cancelled' })
+        return
+      }
+
+      if (startError !== null) {
+        rejectOnce(
+          new VideoConversionProcessError(
+            'FFMPEG_START_FAILED',
+            `Failed to start ffmpeg: ${startError.message}`
+          )
+        )
+        return
+      }
 
       if (exitCode !== 0) {
         const errorOutput = Buffer.concat(stderr).toString('utf8').trim()
         const detail = errorOutput || `Exit code ${String(exitCode)}, signal ${signal ?? 'none'}`
-        rejectConversion(
+        rejectOnce(
           new VideoConversionProcessError(
             'FFMPEG_EXIT_FAILED',
             `ffmpeg exited unsuccessfully: ${detail}`
@@ -252,7 +340,7 @@ export function convertVideo(
         return
       }
 
-      resolveConversion()
+      resolveOnce({ status: 'success' })
     })
   })
 }

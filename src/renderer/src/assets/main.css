@@ -693,6 +693,16 @@ select:focus-visible {
   background: var(--success);
 }
 
+.status-cancelled {
+  border-color: #d8deea;
+  color: #536077;
+  background: #f5f7fb;
+}
+
+.status-cancelled .status-icon {
+  background: #7f8ba0;
+}
+
 .status-path {
   color: #276b52;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;

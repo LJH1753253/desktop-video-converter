@@ -2,6 +2,7 @@ import type {
   ConversionProgressCallback,
   OutputFormat,
   QualityPreset,
+  CancelConversionResult,
   VideoConversionResult
 } from './video-conversion'
 
@@ -52,6 +53,7 @@ export interface VideoApi {
     targetFormat: OutputFormat,
     qualityPreset: QualityPreset
   ) => Promise<VideoConversionResult>
+  cancelConversion: () => Promise<CancelConversionResult>
   onConversionProgress: (callback: ConversionProgressCallback) => () => void
 }
 

@@ -1,7 +1,10 @@
 import { dialog, ipcMain } from 'electron'
+import { access, unlink } from 'node:fs/promises'
 import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
+  CANCEL_CONVERSION_CHANNEL,
+  type CancelConversionResult,
   type ConversionProgress,
   CONVERSION_PROGRESS_CHANNEL,
   isQualityPreset,
@@ -28,7 +31,21 @@ interface CurrentVideo {
   duration: number | null
 }
 
+type ActiveConversionPhase = 'preparing' | 'running' | 'cancelling' | 'completed'
+type InternalCancelReason = 'user' | 'renderer-destroyed'
+
+interface ActiveConversion {
+  controller: AbortController
+  senderId: number
+  phase: ActiveConversionPhase
+  cancelReason: InternalCancelReason | null
+  outputPath: string | null
+  outputExistedBefore: boolean | null
+  processStarted: boolean
+}
+
 let currentVideo: CurrentVideo | null = null
+let activeConversion: ActiveConversion | null = null
 
 const SUPPORTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm'])
 
@@ -72,6 +89,39 @@ function unsupportedDroppedFileResult(): VideoSelectionResult {
 
 function isSupportedVideoPath(filePath: string): boolean {
   return SUPPORTED_VIDEO_EXTENSIONS.has(extname(filePath).toLowerCase())
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch (error: unknown) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return false
+    }
+
+    throw error
+  }
+}
+
+async function cleanupPartialOutput(task: ActiveConversion): Promise<void> {
+  if (!task.processStarted || task.outputPath === null || task.outputExistedBefore !== false) {
+    return
+  }
+
+  try {
+    await unlink(task.outputPath)
+  } catch (error: unknown) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return
+    }
+
+    console.warn('Unable to remove incomplete conversion output:', error)
+  }
 }
 
 async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult> {
@@ -212,9 +262,41 @@ export function registerVideoIpcHandlers(): void {
         }
       }
 
+      if (activeConversion !== null) {
+        return {
+          status: 'error',
+          code: 'CONVERSION_ALREADY_RUNNING',
+          title: '已有转换正在进行',
+          message: '请等待当前视频转换完成后再开始新的转换。'
+        }
+      }
+
       const inputPath = currentVideo.filePath
       const duration = currentVideo.duration
       const formatLabel = getConversionFormatLabel(targetFormat)
+      const task: ActiveConversion = {
+        controller: new AbortController(),
+        senderId: event.sender.id,
+        phase: 'preparing',
+        cancelReason: null,
+        outputPath: null,
+        outputExistedBefore: null,
+        processStarted: false
+      }
+
+      activeConversion = task
+
+      const onSenderDestroyed = (): void => {
+        if (activeConversion !== task || task.phase === 'completed') {
+          return
+        }
+
+        task.cancelReason = 'renderer-destroyed'
+        task.phase = 'cancelling'
+        task.controller.abort()
+      }
+
+      event.sender.once('destroyed', onSenderDestroyed)
 
       try {
         const saveResult = await dialog.showSaveDialog({
@@ -230,7 +312,8 @@ export function registerVideoIpcHandlers(): void {
         })
 
         if (saveResult.canceled || !saveResult.filePath) {
-          return { status: 'cancelled' }
+          task.phase = 'completed'
+          return { status: 'cancelled', reason: 'save-dialog' }
         }
 
         if (!hasExpectedOutputExtension(saveResult.filePath, targetFormat)) {
@@ -242,8 +325,20 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
+        task.outputPath = saveResult.filePath
+        task.outputExistedBefore = await pathExists(saveResult.filePath)
+
+        if (task.controller.signal.aborted) {
+          task.phase = 'completed'
+          await cleanupPartialOutput(task)
+          return { status: 'cancelled', reason: 'user' }
+        }
+
+        task.phase = 'running'
+        task.processStarted = true
+
         const sendProgress = (progress: ConversionProgress): void => {
-          if (event.sender.isDestroyed()) {
+          if (task.phase !== 'running' || event.sender.isDestroyed()) {
             return
           }
 
@@ -254,22 +349,61 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
-        await convertVideo(
+        const completion = await convertVideo(
           inputPath,
           saveResult.filePath,
           targetFormat,
           qualityPreset,
           duration,
-          sendProgress
+          sendProgress,
+          task.controller.signal
         )
+
+        if (completion.status === 'cancelled') {
+          task.phase = 'completed'
+          await cleanupPartialOutput(task)
+          return {
+            status: 'cancelled',
+            reason: 'user'
+          }
+        }
+
+        task.phase = 'completed'
 
         return {
           status: 'success',
           outputPath: saveResult.filePath
         }
       } catch (error: unknown) {
+        task.phase = 'completed'
         return toConversionErrorResult(error)
+      } finally {
+        event.sender.removeListener('destroyed', onSenderDestroyed)
+        if (activeConversion === task) {
+          activeConversion = null
+        }
       }
     }
   )
+
+  ipcMain.handle(CANCEL_CONVERSION_CHANNEL, (event): CancelConversionResult => {
+    const task = activeConversion
+
+    if (task === null || task.phase === 'completed') {
+      return { status: 'no-active' }
+    }
+
+    if (task.senderId !== event.sender.id) {
+      return { status: 'not-owner' }
+    }
+
+    if (task.phase === 'cancelling' || task.controller.signal.aborted) {
+      return { status: 'already-cancelling' }
+    }
+
+    task.cancelReason = 'user'
+    task.phase = 'cancelling'
+    task.controller.abort()
+    return { status: 'accepted' }
+  })
 }

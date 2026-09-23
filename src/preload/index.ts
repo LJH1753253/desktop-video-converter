@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   CONVERT_VIDEO_CHANNEL,
+  CANCEL_CONVERSION_CHANNEL,
   CONVERSION_PROGRESS_CHANNEL,
+  type CancelConversionResult,
   isConversionProgress,
   type OutputFormat,
   type QualityPreset,
@@ -40,7 +42,9 @@ const videoApi: VideoApi = Object.freeze({
       CONVERT_VIDEO_CHANNEL,
       targetFormat,
       qualityPreset
-    ) as Promise<VideoConversionResult>
+    ) as Promise<VideoConversionResult>,
+  cancelConversion: () =>
+    ipcRenderer.invoke(CANCEL_CONVERSION_CHANNEL) as Promise<CancelConversionResult>
 })
 
 contextBridge.exposeInMainWorld('videoApi', videoApi)

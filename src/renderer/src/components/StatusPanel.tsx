@@ -4,11 +4,13 @@ import type { VideoSelectionError } from '../../../shared/video-metadata'
 interface StatusPanelProps {
   conversionError: VideoConversionError | null
   convertedOutputPath: string | null
+  conversionCancelled: boolean
 }
 
 function StatusPanel({
   conversionError,
-  convertedOutputPath
+  convertedOutputPath,
+  conversionCancelled
 }: StatusPanelProps): React.JSX.Element | null {
   if (conversionError) {
     return (
@@ -34,6 +36,20 @@ function StatusPanel({
           <strong>转换完成</strong>
           <p>已保存到：</p>
           <p className="status-path">{convertedOutputPath}</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (conversionCancelled) {
+    return (
+      <section className="status-panel status-cancelled" role="status" aria-live="polite">
+        <span className="status-icon" aria-hidden="true">
+          ×
+        </span>
+        <div>
+          <strong>转换已取消</strong>
+          <p>本次转换已停止，新的转换输出尚未完成。</p>
         </div>
       </section>
     )

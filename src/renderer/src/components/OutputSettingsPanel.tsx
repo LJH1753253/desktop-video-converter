@@ -11,10 +11,12 @@ interface OutputSettingsPanelProps {
   qualityPreset: QualityPreset
   conversionProgress: ConversionProgress | null
   isConverting: boolean
+  isCancelling: boolean
   isLoading: boolean
   onOutputFormatChange: (format: OutputFormat) => void
   onQualityPresetChange: (preset: QualityPreset) => void
   onConvert: () => void
+  onCancel: () => void
 }
 
 function OutputSettingsPanel({
@@ -23,10 +25,12 @@ function OutputSettingsPanel({
   qualityPreset,
   conversionProgress,
   isConverting,
+  isCancelling,
   isLoading,
   onOutputFormatChange,
   onQualityPresetChange,
-  onConvert
+  onConvert,
+  onCancel
 }: OutputSettingsPanelProps): React.JSX.Element {
   const progressPercent = conversionProgress?.percent ?? null
   const showProgress = isConverting || conversionProgress !== null
@@ -124,7 +128,9 @@ function OutputSettingsPanel({
           {showProgress && (
             <div className="conversion-progress" role="status" aria-live="polite">
               <div className="progress-heading">
-                <strong>{progressPercent === 100 ? '转换完成' : '正在转换…'}</strong>
+                <strong>
+                  {progressPercent === 100 ? '转换完成' : isCancelling ? '正在取消…' : '正在转换…'}
+                </strong>
                 <span>{progressPercent === null ? '正在处理' : `${progressPercent}%`}</span>
               </div>
               <div
@@ -143,15 +149,26 @@ function OutputSettingsPanel({
             </div>
           )}
 
-          <button
-            className="button button-primary convert-button"
-            type="button"
-            onClick={onConvert}
-            disabled={isConverting || isLoading}
-          >
-            <span>{isConverting ? '正在转换…' : '开始转换'}</span>
-            {!isConverting && <span aria-hidden="true">→</span>}
-          </button>
+          {isConverting ? (
+            <button
+              className="button button-secondary convert-button"
+              type="button"
+              onClick={onCancel}
+              disabled={isCancelling}
+            >
+              <span>{isCancelling ? '正在取消…' : '取消转换'}</span>
+            </button>
+          ) : (
+            <button
+              className="button button-primary convert-button"
+              type="button"
+              onClick={onConvert}
+              disabled={isLoading}
+            >
+              <span>开始转换</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          )}
         </div>
       )}
     </section>

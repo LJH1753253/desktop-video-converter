@@ -19,6 +19,7 @@ export type VideoConversionErrorCode =
   | 'NO_INPUT_VIDEO'
   | 'INVALID_OUTPUT_EXTENSION'
   | 'OUTPUT_MATCHES_INPUT'
+  | 'CONVERSION_ALREADY_RUNNING'
   | 'FFMPEG_START_FAILED'
   | 'FFMPEG_EXIT_FAILED'
   | 'UNKNOWN'
@@ -31,7 +32,7 @@ export interface VideoConversionError {
 
 export type VideoConversionResult =
   | { status: 'success'; outputPath: string }
-  | { status: 'cancelled' }
+  | { status: 'cancelled'; reason: 'save-dialog' | 'user' }
   | ({ status: 'error' } & VideoConversionError)
 
 export function isOutputFormat(value: unknown): value is OutputFormat {
@@ -65,3 +66,10 @@ export function isConversionProgress(value: unknown): value is ConversionProgres
 
 export const CONVERT_VIDEO_CHANNEL = 'video:convert' as const
 export const CONVERSION_PROGRESS_CHANNEL = 'video:conversion-progress' as const
+export const CANCEL_CONVERSION_CHANNEL = 'video:cancel-conversion' as const
+
+export type CancelConversionResult =
+  | { status: 'accepted' }
+  | { status: 'already-cancelling' }
+  | { status: 'no-active' }
+  | { status: 'not-owner' }
