@@ -19,6 +19,9 @@ export type VideoConversionErrorCode =
   | 'NO_INPUT_VIDEO'
   | 'INVALID_OUTPUT_EXTENSION'
   | 'OUTPUT_MATCHES_INPUT'
+  | 'OUTPUT_CONFLICT'
+  | 'OUTPUT_COMMIT_FAILED'
+  | 'OUTPUT_REPLACE_FAILED'
   | 'CONVERSION_ALREADY_RUNNING'
   | 'FFMPEG_START_FAILED'
   | 'FFMPEG_EXIT_FAILED'
@@ -71,5 +74,6 @@ export const CANCEL_CONVERSION_CHANNEL = 'video:cancel-conversion' as const
 export type CancelConversionResult =
   | { status: 'accepted' }
   | { status: 'already-cancelling' }
+  | { status: 'not-cancellable' }
   | { status: 'no-active' }
   | { status: 'not-owner' }

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { extname, join, parse, resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 import type {
   ConversionProgressCallback,
   OutputFormat,
@@ -92,11 +92,6 @@ export function getConversionFormatLabel(format: OutputFormat): string {
   return CONVERSION_PROFILES[format].label
 }
 
-export function createDefaultOutputPath(inputPath: string, format: OutputFormat): string {
-  const input = parse(inputPath)
-  return join(input.dir, `${input.name}-converted.${format}`)
-}
-
 export function hasExpectedOutputExtension(outputPath: string, format: OutputFormat): boolean {
   return extname(outputPath).toLocaleLowerCase('en-US') === `.${format}`
 }
@@ -108,6 +103,15 @@ function normalizePathForComparison(filePath: string): string {
 
 function isSameFilePath(inputPath: string, outputPath: string): boolean {
   return normalizePathForComparison(inputPath) === normalizePathForComparison(outputPath)
+}
+
+export function assertOutputPathDiffersFromInput(inputPath: string, outputPath: string): void {
+  if (isSameFilePath(inputPath, outputPath)) {
+    throw new VideoConversionProcessError(
+      'OUTPUT_MATCHES_INPUT',
+      `Output path matches input path: ${inputPath}`
+    )
+  }
 }
 
 function hasValidDuration(duration: number | null): duration is number {
@@ -189,13 +193,6 @@ export function convertVideo(
   onProgress: ConversionProgressCallback,
   signal: AbortSignal
 ): Promise<ConversionCompletion> {
-  if (isSameFilePath(inputPath, outputPath)) {
-    throw new VideoConversionProcessError(
-      'OUTPUT_MATCHES_INPUT',
-      `Output path matches input path: ${inputPath}`
-    )
-  }
-
   const profile = CONVERSION_PROFILES[format]
   const args = [
     '-hide_banner',
@@ -203,7 +200,7 @@ export function convertVideo(
     'error',
     '-progress',
     'pipe:1',
-    '-y',
+    '-n',
     '-i',
     inputPath,
     '-map',

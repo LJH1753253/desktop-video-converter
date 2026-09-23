@@ -1,5 +1,4 @@
 import { dialog, ipcMain } from 'electron'
-import { access, unlink } from 'node:fs/promises'
 import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
@@ -18,12 +17,23 @@ import {
 } from '../shared/video-metadata'
 import {
   convertVideo,
-  createDefaultOutputPath,
+  assertOutputPathDiffersFromInput,
   getConversionFormatLabel,
   hasExpectedOutputExtension,
   VideoConversionProcessError
 } from './converter'
 import { readVideoMetadata, VideoMetadataError } from './ffprobe'
+import {
+  cleanupStagedFile,
+  commitCreate,
+  commitReplace,
+  createBackupPath,
+  createTempOutputPath,
+  createTimestampedDefaultPath,
+  getFileIdentity,
+  OutputStagingError,
+  type CommitMode
+} from './output-staging'
 import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
 
 interface CurrentVideo {
@@ -31,7 +41,7 @@ interface CurrentVideo {
   duration: number | null
 }
 
-type ActiveConversionPhase = 'preparing' | 'running' | 'cancelling' | 'completed'
+type ActiveConversionPhase = 'preparing' | 'running' | 'cancelling' | 'committing' | 'completed'
 type InternalCancelReason = 'user' | 'renderer-destroyed'
 
 interface ActiveConversion {
@@ -39,9 +49,10 @@ interface ActiveConversion {
   senderId: number
   phase: ActiveConversionPhase
   cancelReason: InternalCancelReason | null
-  outputPath: string | null
-  outputExistedBefore: boolean | null
-  processStarted: boolean
+  finalOutputPath: string | null
+  tempOutputPath: string | null
+  backupPath: string | null
+  commitMode: CommitMode | null
 }
 
 let currentVideo: CurrentVideo | null = null
@@ -91,37 +102,9 @@ function isSupportedVideoPath(filePath: string): boolean {
   return SUPPORTED_VIDEO_EXTENSIONS.has(extname(filePath).toLowerCase())
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath)
-    return true
-  } catch (error: unknown) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
-      return false
-    }
-
-    throw error
-  }
-}
-
-async function cleanupPartialOutput(task: ActiveConversion): Promise<void> {
-  if (!task.processStarted || task.outputPath === null || task.outputExistedBefore !== false) {
-    return
-  }
-
-  try {
-    await unlink(task.outputPath)
-  } catch (error: unknown) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
-      return
-    }
-
-    console.warn('Unable to remove incomplete conversion output:', error)
-  }
+async function cleanupConversionArtifacts(task: ActiveConversion): Promise<void> {
+  await cleanupStagedFile(task.tempOutputPath)
+  await cleanupStagedFile(task.backupPath)
 }
 
 async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult> {
@@ -151,6 +134,35 @@ async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult
 }
 
 function toConversionErrorResult(error: unknown): VideoConversionResult {
+  if (error instanceof OutputStagingError) {
+    console.error(`[${error.code}] ${error.technicalDetails}`)
+
+    if (error.code === 'OUTPUT_CONFLICT') {
+      return {
+        status: 'error',
+        code: error.code,
+        title: '输出文件发生变化',
+        message: '目标文件在保存过程中发生变化，请重新选择保存位置后重试。'
+      }
+    }
+
+    if (error.code === 'OUTPUT_REPLACE_FAILED') {
+      return {
+        status: 'error',
+        code: error.code,
+        title: '无法替换现有文件',
+        message: '请关闭正在使用该文件的其他程序后重试。'
+      }
+    }
+
+    return {
+      status: 'error',
+      code: error.code,
+      title: '无法保存转换结果',
+      message: '视频已经转换完成，但最终文件保存失败，请重试。'
+    }
+  }
+
   if (error instanceof VideoConversionProcessError) {
     console.error(`[${error.code}] ${error.technicalDetails}`)
 
@@ -279,15 +291,20 @@ export function registerVideoIpcHandlers(): void {
         senderId: event.sender.id,
         phase: 'preparing',
         cancelReason: null,
-        outputPath: null,
-        outputExistedBefore: null,
-        processStarted: false
+        finalOutputPath: null,
+        tempOutputPath: null,
+        backupPath: null,
+        commitMode: null
       }
 
       activeConversion = task
 
       const onSenderDestroyed = (): void => {
-        if (activeConversion !== task || task.phase === 'completed') {
+        if (
+          activeConversion !== task ||
+          task.phase === 'completed' ||
+          task.phase === 'committing'
+        ) {
           return
         }
 
@@ -299,10 +316,17 @@ export function registerVideoIpcHandlers(): void {
       event.sender.once('destroyed', onSenderDestroyed)
 
       try {
+        const defaultPath = await createTimestampedDefaultPath(inputPath, targetFormat)
+
+        if (task.controller.signal.aborted) {
+          task.phase = 'completed'
+          return { status: 'cancelled', reason: 'user' }
+        }
+
         const saveResult = await dialog.showSaveDialog({
           title: '保存转换后的视频',
           buttonLabel: '保存并转换',
-          defaultPath: createDefaultOutputPath(inputPath, targetFormat),
+          defaultPath,
           filters: [
             {
               name: `${formatLabel} 视频`,
@@ -325,17 +349,22 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
-        task.outputPath = saveResult.filePath
-        task.outputExistedBefore = await pathExists(saveResult.filePath)
+        assertOutputPathDiffersFromInput(inputPath, saveResult.filePath)
+
+        const originalIdentity = await getFileIdentity(saveResult.filePath)
+        const commitMode: CommitMode = originalIdentity === null ? 'create' : 'replace'
+        task.finalOutputPath = saveResult.filePath
+        task.commitMode = commitMode
+        task.tempOutputPath = await createTempOutputPath(saveResult.filePath, targetFormat)
+        const tempOutputPath = task.tempOutputPath
 
         if (task.controller.signal.aborted) {
           task.phase = 'completed'
-          await cleanupPartialOutput(task)
+          await cleanupConversionArtifacts(task)
           return { status: 'cancelled', reason: 'user' }
         }
 
         task.phase = 'running'
-        task.processStarted = true
 
         const sendProgress = (progress: ConversionProgress): void => {
           if (task.phase !== 'running' || event.sender.isDestroyed()) {
@@ -351,7 +380,7 @@ export function registerVideoIpcHandlers(): void {
 
         const completion = await convertVideo(
           inputPath,
-          saveResult.filePath,
+          tempOutputPath,
           targetFormat,
           qualityPreset,
           duration,
@@ -361,11 +390,28 @@ export function registerVideoIpcHandlers(): void {
 
         if (completion.status === 'cancelled') {
           task.phase = 'completed'
-          await cleanupPartialOutput(task)
+          await cleanupConversionArtifacts(task)
           return {
             status: 'cancelled',
             reason: 'user'
           }
+        }
+
+        task.phase = 'committing'
+
+        if (commitMode === 'create') {
+          await commitCreate(tempOutputPath, saveResult.filePath)
+        } else {
+          if (originalIdentity === null) {
+            throw new OutputStagingError(
+              'OUTPUT_CONFLICT',
+              `Final output disappeared before replacement: ${saveResult.filePath}`
+            )
+          }
+
+          task.backupPath = await createBackupPath(saveResult.filePath, targetFormat)
+          const backupPath = task.backupPath
+          await commitReplace(tempOutputPath, saveResult.filePath, originalIdentity, backupPath)
         }
 
         task.phase = 'completed'
@@ -376,6 +422,7 @@ export function registerVideoIpcHandlers(): void {
         }
       } catch (error: unknown) {
         task.phase = 'completed'
+        await cleanupConversionArtifacts(task)
         return toConversionErrorResult(error)
       } finally {
         event.sender.removeListener('destroyed', onSenderDestroyed)
@@ -395,6 +442,10 @@ export function registerVideoIpcHandlers(): void {
 
     if (task.senderId !== event.sender.id) {
       return { status: 'not-owner' }
+    }
+
+    if (task.phase === 'committing') {
+      return { status: 'not-cancellable' }
     }
 
     if (task.phase === 'cancelling' || task.controller.signal.aborted) {

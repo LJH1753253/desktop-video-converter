@@ -152,7 +152,10 @@ function App(): React.JSX.Element {
     setIsCancelling(true)
 
     try {
-      await window.videoApi.cancelConversion()
+      const result = await window.videoApi.cancelConversion()
+      if (result.status === 'not-cancellable') {
+        setIsCancelling(false)
+      }
     } catch (error: unknown) {
       console.error('Failed to communicate with the main process:', error)
       setIsCancelling(false)
