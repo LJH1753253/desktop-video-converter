@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   CONVERT_VIDEO_CHANNEL,
+  CONVERSION_PROGRESS_CHANNEL,
+  isConversionProgress,
   type OutputFormat,
   type QualityPreset,
   type VideoConversionResult
@@ -19,6 +21,19 @@ const videoApi: VideoApi = Object.freeze({
     const electronFile = file as unknown as Parameters<typeof webUtils.getPathForFile>[0]
     const filePath = webUtils.getPathForFile(electronFile)
     return ipcRenderer.invoke(LOAD_DROPPED_VIDEO_CHANNEL, filePath) as Promise<VideoSelectionResult>
+  },
+  onConversionProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+      if (isConversionProgress(payload)) {
+        callback(payload)
+      }
+    }
+
+    ipcRenderer.on(CONVERSION_PROGRESS_CHANNEL, listener)
+
+    return () => {
+      ipcRenderer.removeListener(CONVERSION_PROGRESS_CHANNEL, listener)
+    }
   },
   convertVideo: (targetFormat: OutputFormat, qualityPreset: QualityPreset) =>
     ipcRenderer.invoke(

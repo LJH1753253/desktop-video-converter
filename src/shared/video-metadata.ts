@@ -1,4 +1,9 @@
-import type { OutputFormat, QualityPreset, VideoConversionResult } from './video-conversion'
+import type {
+  ConversionProgressCallback,
+  OutputFormat,
+  QualityPreset,
+  VideoConversionResult
+} from './video-conversion'
 
 export interface VideoMetadata {
   filePath: string
@@ -47,6 +52,7 @@ export interface VideoApi {
     targetFormat: OutputFormat,
     qualityPreset: QualityPreset
   ) => Promise<VideoConversionResult>
+  onConversionProgress: (callback: ConversionProgressCallback) => () => void
 }
 
 export const SELECT_VIDEO_CHANNEL = 'video:select' as const

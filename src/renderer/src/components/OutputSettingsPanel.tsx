@@ -1,10 +1,15 @@
-import type { OutputFormat, QualityPreset } from '../../../shared/video-conversion'
+import type {
+  ConversionProgress,
+  OutputFormat,
+  QualityPreset
+} from '../../../shared/video-conversion'
 import type { VideoMetadata } from '../../../shared/video-metadata'
 
 interface OutputSettingsPanelProps {
   metadata: VideoMetadata | null
   outputFormat: OutputFormat
   qualityPreset: QualityPreset
+  conversionProgress: ConversionProgress | null
   isConverting: boolean
   isLoading: boolean
   onOutputFormatChange: (format: OutputFormat) => void
@@ -16,12 +21,16 @@ function OutputSettingsPanel({
   metadata,
   outputFormat,
   qualityPreset,
+  conversionProgress,
   isConverting,
   isLoading,
   onOutputFormatChange,
   onQualityPresetChange,
   onConvert
 }: OutputSettingsPanelProps): React.JSX.Element {
+  const progressPercent = conversionProgress?.percent ?? null
+  const showProgress = isConverting || conversionProgress !== null
+
   return (
     <section className="output-panel" aria-label="输出设置">
       <div className="section-heading">
@@ -111,6 +120,28 @@ function OutputSettingsPanel({
             </span>
             <p>点击转换后选择保存位置，原视频不会被覆盖。</p>
           </div>
+
+          {showProgress && (
+            <div className="conversion-progress" role="status" aria-live="polite">
+              <div className="progress-heading">
+                <strong>{progressPercent === 100 ? '转换完成' : '正在转换…'}</strong>
+                <span>{progressPercent === null ? '正在处理' : `${progressPercent}%`}</span>
+              </div>
+              <div
+                className={`progress-track${progressPercent === null ? ' is-indeterminate' : ''}`}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent ?? undefined}
+                aria-valuetext={progressPercent === null ? '正在转换' : `${progressPercent}%`}
+              >
+                <span
+                  className="progress-fill"
+                  style={{ width: progressPercent === null ? '35%' : `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           <button
             className="button button-primary convert-button"

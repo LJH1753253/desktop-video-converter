@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
+  ConversionProgress,
   OutputFormat,
   QualityPreset,
   VideoConversionError
@@ -21,19 +22,24 @@ function App(): React.JSX.Element {
   const [isSelecting, setIsSelecting] = useState(false)
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('mp4')
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('balanced')
+  const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null)
   const [isConverting, setIsConverting] = useState(false)
   const [conversionError, setConversionError] = useState<VideoConversionError | null>(null)
   const [convertedOutputPath, setConvertedOutputPath] = useState<string | null>(null)
+
+  useEffect(() => window.videoApi.onConversionProgress(setConversionProgress), [])
 
   const applyVideoSelectionResult = (result: VideoSelectionResult): void => {
     if (result.status === 'success') {
       setMetadata(result.metadata)
       setThumbnailDataUrl(result.thumbnailDataUrl)
       setErrorInfo(null)
+      setConversionProgress(null)
       setConversionError(null)
       setConvertedOutputPath(null)
     } else if (result.status === 'error') {
       setErrorInfo(result)
+      setConversionProgress(null)
       setConversionError(null)
       setConvertedOutputPath(null)
     }
@@ -67,6 +73,7 @@ function App(): React.JSX.Element {
         title: '一次只能添加一个视频',
         message: '请只拖入一个视频文件后重试。'
       })
+      setConversionProgress(null)
       setConversionError(null)
       setConvertedOutputPath(null)
       return
@@ -78,6 +85,7 @@ function App(): React.JSX.Element {
 
   const handleConvertVideo = async (): Promise<void> => {
     setIsConverting(true)
+    setConversionProgress(null)
     setConversionError(null)
     setConvertedOutputPath(null)
 
@@ -85,8 +93,10 @@ function App(): React.JSX.Element {
       const result = await window.videoApi.convertVideo(outputFormat, qualityPreset)
 
       if (result.status === 'success') {
+        setConversionProgress({ percent: 100, processedSeconds: null })
         setConvertedOutputPath(result.outputPath)
       } else if (result.status === 'error') {
+        setConversionProgress(null)
         setConversionError(result)
       }
     } catch (error: unknown) {
@@ -96,6 +106,7 @@ function App(): React.JSX.Element {
         title: '视频转换失败',
         message: '无法与主进程通信，请重试。'
       })
+      setConversionProgress(null)
     } finally {
       setIsConverting(false)
     }
@@ -120,6 +131,7 @@ function App(): React.JSX.Element {
           metadata={metadata}
           outputFormat={outputFormat}
           qualityPreset={qualityPreset}
+          conversionProgress={conversionProgress}
           isConverting={isConverting}
           isLoading={isSelecting}
           onOutputFormatChange={setOutputFormat}
@@ -128,11 +140,7 @@ function App(): React.JSX.Element {
         />
       </section>
 
-      <StatusPanel
-        conversionError={conversionError}
-        convertedOutputPath={convertedOutputPath}
-        isConverting={isConverting}
-      />
+      <StatusPanel conversionError={conversionError} convertedOutputPath={convertedOutputPath} />
     </main>
   )
 }

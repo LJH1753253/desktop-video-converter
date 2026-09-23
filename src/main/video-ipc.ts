@@ -2,6 +2,8 @@ import { dialog, ipcMain } from 'electron'
 import { extname } from 'node:path'
 import {
   CONVERT_VIDEO_CHANNEL,
+  type ConversionProgress,
+  CONVERSION_PROGRESS_CHANNEL,
   isQualityPreset,
   isOutputFormat,
   type VideoConversionResult
@@ -21,7 +23,12 @@ import {
 import { readVideoMetadata, VideoMetadataError } from './ffprobe'
 import { generateVideoThumbnail, ThumbnailGenerationError } from './thumbnail'
 
-let currentVideoFilePath: string | null = null
+interface CurrentVideo {
+  filePath: string
+  duration: number | null
+}
+
+let currentVideo: CurrentVideo | null = null
 
 const SUPPORTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm'])
 
@@ -78,7 +85,10 @@ async function loadVideoFromPath(filePath: string): Promise<VideoSelectionResult
       logThumbnailFailure(error)
     }
 
-    currentVideoFilePath = filePath
+    currentVideo = {
+      filePath,
+      duration: metadata.duration
+    }
 
     return {
       status: 'success',
@@ -171,7 +181,7 @@ export function registerVideoIpcHandlers(): void {
   ipcMain.handle(
     CONVERT_VIDEO_CHANNEL,
     async (
-      _event,
+      event,
       targetFormat: unknown,
       qualityPreset: unknown
     ): Promise<VideoConversionResult> => {
@@ -193,7 +203,7 @@ export function registerVideoIpcHandlers(): void {
         }
       }
 
-      if (currentVideoFilePath === null) {
+      if (currentVideo === null) {
         return {
           status: 'error',
           code: 'NO_INPUT_VIDEO',
@@ -202,7 +212,8 @@ export function registerVideoIpcHandlers(): void {
         }
       }
 
-      const inputPath = currentVideoFilePath
+      const inputPath = currentVideo.filePath
+      const duration = currentVideo.duration
       const formatLabel = getConversionFormatLabel(targetFormat)
 
       try {
@@ -231,7 +242,26 @@ export function registerVideoIpcHandlers(): void {
           }
         }
 
-        await convertVideo(inputPath, saveResult.filePath, targetFormat, qualityPreset)
+        const sendProgress = (progress: ConversionProgress): void => {
+          if (event.sender.isDestroyed()) {
+            return
+          }
+
+          try {
+            event.sender.send(CONVERSION_PROGRESS_CHANNEL, progress)
+          } catch (error: unknown) {
+            console.warn('Unable to send conversion progress to the renderer:', error)
+          }
+        }
+
+        await convertVideo(
+          inputPath,
+          saveResult.filePath,
+          targetFormat,
+          qualityPreset,
+          duration,
+          sendProgress
+        )
 
         return {
           status: 'success',

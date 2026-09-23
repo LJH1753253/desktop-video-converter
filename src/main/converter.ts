@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { extname, join, parse, resolve } from 'node:path'
 import type {
+  ConversionProgressCallback,
   OutputFormat,
   QualityPreset,
   VideoConversionErrorCode
@@ -107,11 +108,83 @@ function isSameFilePath(inputPath: string, outputPath: string): boolean {
   return normalizePathForComparison(inputPath) === normalizePathForComparison(outputPath)
 }
 
+function hasValidDuration(duration: number | null): duration is number {
+  return duration !== null && Number.isFinite(duration) && duration > 0
+}
+
+function createProgressParser(
+  duration: number | null,
+  onProgress: ConversionProgressCallback
+): { push: (chunk: Buffer) => void; flush: () => void } {
+  let buffer = ''
+  let lastPercent: number | null = null
+  let hasSentPercent = false
+
+  const parseLine = (rawLine: string): void => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const separatorIndex = line.indexOf('=')
+
+    if (separatorIndex <= 0 || line.slice(0, separatorIndex) !== 'out_time_us') {
+      return
+    }
+
+    const microseconds = Number(line.slice(separatorIndex + 1))
+    if (!Number.isFinite(microseconds) || microseconds < 0) {
+      return
+    }
+
+    const processedSeconds = microseconds / 1_000_000
+    if (!Number.isFinite(processedSeconds)) {
+      return
+    }
+
+    if (!hasValidDuration(duration)) {
+      onProgress({ percent: null, processedSeconds })
+      return
+    }
+
+    const percent = Math.min(99, Math.max(0, Math.round((processedSeconds / duration) * 100)))
+
+    if (hasSentPercent && percent === lastPercent) {
+      return
+    }
+
+    lastPercent = percent
+    hasSentPercent = true
+    onProgress({ percent, processedSeconds })
+  }
+
+  const consumeLines = (): void => {
+    let newlineIndex = buffer.indexOf('\n')
+
+    while (newlineIndex >= 0) {
+      parseLine(buffer.slice(0, newlineIndex))
+      buffer = buffer.slice(newlineIndex + 1)
+      newlineIndex = buffer.indexOf('\n')
+    }
+  }
+
+  return {
+    push: (chunk: Buffer): void => {
+      buffer += chunk.toString('utf8')
+      consumeLines()
+    },
+    flush: (): void => {
+      if (buffer.length > 0) {
+        parseLine(buffer)
+        buffer = ''
+      }
+    }
+  }
+}
+
 export function convertVideo(
   inputPath: string,
   outputPath: string,
   format: OutputFormat,
-  qualityPreset: QualityPreset
+  qualityPreset: QualityPreset,
+  duration: number | null,
+  onProgress: ConversionProgressCallback
 ): Promise<void> {
   if (isSameFilePath(inputPath, outputPath)) {
     throw new VideoConversionProcessError(
@@ -125,6 +198,8 @@ export function convertVideo(
     '-hide_banner',
     '-loglevel',
     'error',
+    '-progress',
+    'pipe:1',
     '-y',
     '-i',
     inputPath,
@@ -138,10 +213,15 @@ export function convertVideo(
 
   return new Promise((resolveConversion, rejectConversion) => {
     const stderr: Buffer[] = []
+    const progressParser = createProgressParser(duration, onProgress)
     const ffmpeg = spawn('ffmpeg', args, {
       shell: false,
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+    ffmpeg.stdout.on('data', (chunk: Buffer) => {
+      progressParser.push(chunk)
     })
 
     ffmpeg.stderr.on('data', (chunk: Buffer) => {
@@ -158,6 +238,8 @@ export function convertVideo(
     })
 
     ffmpeg.once('close', (exitCode, signal) => {
+      progressParser.flush()
+
       if (exitCode !== 0) {
         const errorOutput = Buffer.concat(stderr).toString('utf8').trim()
         const detail = errorOutput || `Exit code ${String(exitCode)}, signal ${signal ?? 'none'}`

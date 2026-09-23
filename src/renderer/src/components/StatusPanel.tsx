@@ -4,26 +4,12 @@ import type { VideoSelectionError } from '../../../shared/video-metadata'
 interface StatusPanelProps {
   conversionError: VideoConversionError | null
   convertedOutputPath: string | null
-  isConverting: boolean
 }
 
 function StatusPanel({
   conversionError,
-  convertedOutputPath,
-  isConverting
+  convertedOutputPath
 }: StatusPanelProps): React.JSX.Element | null {
-  if (isConverting) {
-    return (
-      <section className="status-panel status-progress" role="status" aria-live="polite">
-        <span className="status-spinner" aria-hidden="true" />
-        <div>
-          <strong>正在转换视频</strong>
-          <p>请稍候，完成后会显示保存位置。</p>
-        </div>
-      </section>
-    )
-  }
-
   if (conversionError) {
     return (
       <section className="status-panel status-error" role="alert">
