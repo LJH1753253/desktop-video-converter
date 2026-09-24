@@ -43,7 +43,9 @@ function StatusPanel({
         <div>
           <strong>转换完成</strong>
           <p>视频已成功保存到：</p>
-          <p className="status-path">{convertedOutputPath}</p>
+          <p className="status-path" title={convertedOutputPath}>
+            {convertedOutputPath}
+          </p>
         </div>
       </section>
     )

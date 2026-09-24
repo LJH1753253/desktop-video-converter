@@ -12,6 +12,7 @@ import {
 import {
   SELECT_VIDEO_CHANNEL,
   LOAD_DROPPED_VIDEO_CHANNEL,
+  ENTER_WORKING_MODE_CHANNEL,
   type DroppedVideoFile,
   type VideoApi,
   type VideoSelectionResult
@@ -24,6 +25,7 @@ const videoApi: VideoApi = Object.freeze({
     const filePath = webUtils.getPathForFile(electronFile)
     return ipcRenderer.invoke(LOAD_DROPPED_VIDEO_CHANNEL, filePath) as Promise<VideoSelectionResult>
   },
+  enterWorkingMode: () => ipcRenderer.invoke(ENTER_WORKING_MODE_CHANNEL) as Promise<void>,
   onConversionProgress: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
       if (isConversionProgress(payload)) {

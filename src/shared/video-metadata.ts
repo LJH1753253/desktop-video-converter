@@ -50,6 +50,7 @@ export type VideoSelectionResult =
 export interface VideoApi {
   selectVideo: () => Promise<VideoSelectionResult>
   loadDroppedVideo: (file: DroppedVideoFile) => Promise<VideoSelectionResult>
+  enterWorkingMode: () => Promise<void>
   convertVideo: (
     targetFormat: OutputFormat,
     qualityPreset: QualityPreset
@@ -60,3 +61,4 @@ export interface VideoApi {
 
 export const SELECT_VIDEO_CHANNEL = 'video:select' as const
 export const LOAD_DROPPED_VIDEO_CHANNEL = 'video:load-dropped' as const
+export const ENTER_WORKING_MODE_CHANNEL = 'desktop-layout:enter-working-mode' as const

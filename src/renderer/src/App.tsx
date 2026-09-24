@@ -51,6 +51,9 @@ function App(): React.JSX.Element {
       setConversionError(null)
       setConversionCancelled(false)
       setConvertedOutputPath(null)
+      void window.videoApi.enterWorkingMode().catch((error: unknown) => {
+        console.error('Failed to enter working window mode:', error)
+      })
     } else if (result.status === 'error') {
       acceptProgressRef.current = false
       setErrorInfo(result)
@@ -167,20 +170,27 @@ function App(): React.JSX.Element {
     }
   }
 
+  const hasGlobalStatus = Boolean(
+    errorInfo || conversionError || convertedOutputPath || conversionCancelled
+  )
+  const workspaceClassName = metadata ? 'workspace workspace--loaded' : 'workspace workspace--empty'
+
   return (
     <main className="app-shell">
       <AppHeader />
 
-      {errorInfo && <SelectionErrorBanner error={errorInfo} hasMetadata={metadata !== null} />}
+      <div className={`global-status-slot${hasGlobalStatus ? ' global-status-slot--active' : ''}`}>
+        {errorInfo && <SelectionErrorBanner error={errorInfo} hasMetadata={metadata !== null} />}
 
-      <StatusPanel
-        conversionError={conversionError}
-        convertedOutputPath={convertedOutputPath}
-        conversionCancelled={false}
-        isGlobal
-      />
+        <StatusPanel
+          conversionError={conversionError}
+          convertedOutputPath={convertedOutputPath}
+          conversionCancelled={conversionCancelled}
+          isGlobal
+        />
+      </div>
 
-      <section className="workspace" aria-label="视频转换工作区">
+      <section className={workspaceClassName} aria-label="视频转换工作区">
         <VideoInputPanel
           metadata={metadata}
           thumbnailDataUrl={thumbnailDataUrl}
@@ -203,12 +213,6 @@ function App(): React.JSX.Element {
           onCancel={handleCancelConversion}
         />
       </section>
-
-      <StatusPanel
-        conversionError={null}
-        convertedOutputPath={null}
-        conversionCancelled={conversionCancelled}
-      />
     </main>
   )
 }
