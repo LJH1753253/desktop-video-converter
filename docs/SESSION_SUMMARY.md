@@ -939,5 +939,3 @@ Web Installer backend 使用 GitHub Release，因此安装过程中必须能够�
 ```text
 https://github.com/LJH1753253/desktop-video-converter/releases/download/v1.0.1/desktop-video-converter-1.0.1-x64.nsis.7z
 ```
-
-本阶段未修改 README 或 GitHub Release Notes；也未新增代码构建、commit、push、tag 或 Release 操作。

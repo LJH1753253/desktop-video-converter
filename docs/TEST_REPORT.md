@@ -1052,4 +1052,4 @@ SHA-256：C568E9532536CE2F0583387A1EB74EF437CF8ABFB96C5FB2271FBA311DEA242A
 
 Web Installer 是约 `0.7346 MiB` 的 download / installation entry，不是完整应用大小。安装时需要下载约 `136.73 MiB` 的 `.nsis.7z` payload；安装后的应用仍包含 Electron runtime、`app.asar`、FFmpeg binary 和其他 application resources。
 
-v1.0.1 Release acceptance 已完成；此前的 Web 在线安装、无网络安装和下载失败 Pending 状态已由 T64 / T65 的人工测试覆盖。当前测试报告不代表新增代码构建，也不包含未执行的其他跨平台安装测试。
+v1.0.1 Release acceptance 已完成；此前的 Web 在线安装及下载失败 Pending 项已由 T64 / T65 的人工测试覆盖。本报告仅记录实际执行的验证，不包含未执行的其他跨平台安装测试。
