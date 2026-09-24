@@ -143,6 +143,8 @@ binary 来源应使用项目记录的 Gyan FFmpeg 9.0.2 essentials build。第�
 - 安装过程中需要联网获取完整应用；
 - 安装后的功能与 Offline Installer 完全一致。
 
+如果浏览器无法正常打开 GitHub Release 页面，或 GitHub 文件下载很慢、失败，Online Installer 可能无法下载完整应用组件。可开启能够正常访问 GitHub 的系统代理或全局代理后重试；不方便配置网络时，直接使用 Offline Installer。
+
 网络受限时可使用 Offline Installer：
 
 - 下载体积约 137 MiB；

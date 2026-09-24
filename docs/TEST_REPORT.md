@@ -995,13 +995,32 @@ dist/desktop-video-converter-1.0.1-setup.exe
 
 测试类型：Manual。
 
-结果：Pending。尚未创建对应 GitHub Release 或执行在线安装。
+开发者使用正式 v1.0.1 Web Installer 实际验证：
+
+- Web Installer 正常启动；
+- 能够从 GitHub Release 获取对应的 v1.0.1 application payload；
+- payload 下载成功；
+- 安装成功完成；
+- 应用可以正常启动；
+- 基本媒体处理流程正常。
+
+结果：通过。
 
 ### T65 Web Installer no-network / download failure behavior
 
 测试类型：Manual。
 
-结果：Pending。尚未进行无网络或 payload 下载失败场景测试。
+开发者在无法正常获取 GitHub payload 的网络条件下启动 Web Installer，确认：
+
+- payload 无法下载；
+- 安装器出现明确错误弹窗；
+- 安装器没有崩溃；
+- 没有出现 raw application exception；
+- 用户能够判断安装未成功。
+
+未记录弹窗逐字内容。
+
+结果：通过。
 
 ## 5. v1.0.1 最终 Release Candidate 产物记录
 
@@ -1033,4 +1052,4 @@ SHA-256：C568E9532536CE2F0583387A1EB74EF437CF8ABFB96C5FB2271FBA311DEA242A
 
 Web Installer 是约 `0.7346 MiB` 的 download / installation entry，不是完整应用大小。安装时需要下载约 `136.73 MiB` 的 `.nsis.7z` payload；安装后的应用仍包含 Electron runtime、`app.asar`、FFmpeg binary 和其他 application resources。
 
-截至本阶段，v1.0.1 payload 尚未上传 GitHub Release，因此没有执行 Web 在线安装、无网络安装或下载失败测试；没有 commit、push、tag、Release 或 publish。
+v1.0.1 Release acceptance 已完成；此前的 Web 在线安装、无网络安装和下载失败 Pending 状态已由 T64 / T65 的人工测试覆盖。当前测试报告不代表新增代码构建，也不包含未执行的其他跨平台安装测试。

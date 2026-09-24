@@ -846,7 +846,7 @@ System FFmpeg / Lite 方案也评估过但没有实施：它会把 FFmpeg 安装
 
 Web Installer 优化的是 distribution entry size，不是 installed footprint。对应的固定 release 规划为 `v1.0.1`，预期 payload 为 `desktop-video-converter-1.0.1-x64.nsis.7z`；不使用 `latest/download`，以确保旧 installer 始终匹配自己的 package version。`.nsis.7z` 是 Web Installer backend asset，不面向用户手动安装。
 
-本阶段仅完成 v1.0.1 release preparation：未创建 GitHub Release、未 publish、未 tag、未 commit、未 push。
+该阶段记录的是 release preparation 当时的状态；随后在 Phase 5D 完成正式 GitHub Release 验收。
 
 ## 22. Phase 5C：Offline Acceptance & Release Documentation
 
@@ -900,4 +900,44 @@ package composition audit 保留了以下结论：业务 app payload 本身较�
 
 发布前 RC 构建还发现仓库内隔离保存的旧 dist backup 可能被 electron-builder 重新计入 application package。这属于 release engineering / build hygiene issue，不是应用运行时 app.asar bug。处理过程包括识别包体异常、停用异常 artifact、隔离旧构建目录、处理旧 `app.asar` 文件锁、恢复预期 Git 状态、清理 dist，并使用正式 npm scripts 重新生成和核验 RC；最终 `app.asar` 稳定为 `2,658,378 Bytes`，FFmpeg 只保留在 bundled resource 路径。
 
-截至本阶段，T63 Offline Installer 人工回归为 Pass；T64 Web 在线安装和 T65 Web Installer 无网络 / 下载失败仍为 Pending，因为 v1.0.1 payload 尚未上传 GitHub Release。尚未 commit、push、tag、创建 Release 或 publish。
+截至 Phase 5C，T63 Offline Installer 人工回归为 Pass，T64 / T65 当时仍为 Pending；随后在 Phase 5D 完成正式 Release acceptance。
+
+## 23. Phase 5D：Final Release Acceptance & Documentation
+
+Desktop Video Converter `v1.0.1` 已正式创建 GitHub Release，Release title 为 `Desktop Video Converter v1.0.1`。正式资产为：
+
+- Online / Web Installer：`desktop-video-converter-1.0.1-web-setup.exe`，`770,269 Bytes`，SHA-256 `070A9E31A9D575F5DF5BE8368A605FB4A72DD9767F390E5900151046C35E398A`；
+- Offline Installer：`desktop-video-converter-1.0.1-setup.exe`，`143,860,452 Bytes`，SHA-256 `74625D0CDD23D44CFB330F238BCC5BA1FF43725DE8D2BB1BDE57484BA6237FCB`；
+- Web application payload：`desktop-video-converter-1.0.1-x64.nsis.7z`，`143,367,781 Bytes`，SHA-256 `C568E9532536CE2F0583387A1EB74EF437CF8ABFB96C5FB2271FBA311DEA242A`。
+
+### Release acceptance
+
+T63、T64、T65 均已由开发者本人完成 Manual 测试并通过：
+
+- T63：v1.0.1 Offline Installer 安装版回归；
+- T64：v1.0.1 Web Installer 真实在线安装，成功从 GitHub Release 获取对应 payload 并完成安装；
+- T65：Web Installer 无网络 / payload 下载失败，安装器显示错误弹窗且没有崩溃或 raw application exception。
+
+v1.0.1 Release acceptance 已完成，不再存在与本次 Release acceptance 直接相关的 Pending 项。
+
+### Web / Offline 的最终产品定位
+
+Web Installer 是约 `0.7346 MiB` 的 installation / download entry，不是完整应用大小。安装阶段仍需下载 `desktop-video-converter-1.0.1-x64.nsis.7z`，大小约 `136.73 MiB`；完整安装后仍包含 Electron / Chromium runtime、application code、`ffmpeg.exe`、`ffprobe.exe` 和 application resources。
+
+Offline Installer 约 `137.20 MiB`，完整 application payload 已内嵌，安装 application payload 不依赖从 GitHub 下载；它仍然不等同于不需要任何网络权限或系统服务。两种分发都内置 FFmpeg / ffprobe，用户无需单独安装 FFmpeg 或配置 PATH，安装后的功能一致。
+
+### 网络可达性下的 Web Installer 结论
+
+Web Installer backend 使用 GitHub Release，因此安装过程中必须能够访问 GitHub Release assets。开发者实际观察到，部分网络环境下 GitHub Release 资源可能访问不稳定或不可达，Web Installer 会出现与断网场景类似的 payload 下载失败；在具备 GitHub 可访问性的网络或代理环境下可以正常使用。
+
+开发者确认 system proxy 环境和 global proxy 节点环境均可满足 GitHub Web Installer 下载需求；该结论不表示必须使用某一种特定工具。
+
+因此继续保留 Offline Installer，作为 network-independent application payload delivery 方案，覆盖 GitHub 访问不稳定、企业网络限制、不希望配置代理以及需要离线安装的场景。最终采用 Online Installer + Offline Installer 双分发方式：Online 优化 initial download entry，Offline 保证网络受限环境下仍可安装完整应用。
+
+固定版本 payload URL 为：
+
+```text
+https://github.com/LJH1753253/desktop-video-converter/releases/download/v1.0.1/desktop-video-converter-1.0.1-x64.nsis.7z
+```
+
+本阶段未修改 README 或 GitHub Release Notes；也未新增代码构建、commit、push、tag 或 Release 操作。
