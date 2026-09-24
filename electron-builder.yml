@@ -22,6 +22,8 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+nsisWeb:
+  artifactName: ${name}-${version}-web-setup.${ext}
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
@@ -40,3 +42,7 @@ npmRebuild: false
 electronLanguages:
   - zh-CN
   - en-US
+publish:
+  provider: github
+  owner: LJH1753253
+  repo: desktop-video-converter
