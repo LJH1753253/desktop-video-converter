@@ -898,3 +898,139 @@ Phase 3 中另外执行并通过：
 批量转换不属于当前产品范围，不作为本阶段测试目标。
 
 README 和 5 张应用截图属于交付材料，不作为运行时测试编号；截图来自实际应用运行流程。
+
+## 4. Post-delivery / Phase 5A 自动与构建检查
+
+以下记录属于自动检查、构建或产物检查，不等同于开发者人工 UI 测试。
+
+### T57 Adaptive desktop layout implementation/build verification
+
+测试类型：Automated / source and build inspection。
+
+检查内容：核对 Empty / Working sizing、work area clamp、一次性扩展和手动 resize tolerance 的当前实现，并结合既有 `npm run build` 结果检查构建完整性。
+
+实际结果：窗口 sizing 常量和 IPC 入口与当前产品策略一致，构建通过。
+
+结果：通过。
+
+### T58 Electron locale packaging verification
+
+测试类型：Automated / packaging inspection。
+
+实际结果：`win-unpacked/locales` 仅包含 `en-US.pak` 和 `zh-CN.pak`，未修改业务代码或 FFmpeg 资源。
+
+结果：通过。
+
+### T59 Offline Installer rebuild verification
+
+测试类型：Build inspection。
+
+开发者执行 `npm run build:win`，成功生成：
+
+```text
+dist/desktop-video-converter-1.0.0-setup.exe
+```
+
+实际大小：`143,858,405 Bytes / 137.194066 MiB`。
+
+结果：通过。该记录对应已完成的实际构建，不代表 v1.0.1 安装版人工验收已经完成。
+
+### T60 NSIS Web Installer generation verification
+
+测试类型：Build inspection。
+
+开发者执行 `npm run build:win:web`，成功生成：
+
+```text
+dist/nsis-web/desktop-video-converter-1.0.0-web-setup.exe
+dist/nsis-web/desktop-video-converter-1.0.0-x64.nsis.7z
+```
+
+实际大小分别为：`770,261 Bytes / 0.734578 MiB` 和 `143,365,904 Bytes / 136.724380 MiB`。
+
+结果：通过。构建使用 `--publish never`，没有创建 Release 或上传 artifact。
+
+### T61 Web payload content verification
+
+测试类型：Automated / archive and filesystem inspection。
+
+实际结果：Web payload 中存在 `resources/ffmpeg/ffmpeg.exe`、`resources/ffmpeg/ffprobe.exe`、`resources/app.asar`，Electron locale 仅为 `en-US.pak` 和 `zh-CN.pak`。
+
+结果：通过。
+
+### T62 Offline/Web artifact separation verification
+
+测试类型：Automated / artifact inspection。
+
+实际结果：Offline Installer 保持完整 payload；Web Installer 为小体积下载入口，`.nsis.7z` 为安装阶段下载的 backend payload。两者使用同一应用内容策略，Web Installer 不代表 installed footprint 减少。
+
+结果：通过。
+
+### T63 v1.0.1 Offline Installer manual regression
+
+测试类型：Manual。
+
+测试对象：
+
+```text
+dist/desktop-video-converter-1.0.1-setup.exe
+```
+
+开发者本人实际验证：
+
+- installer 正常启动与安装；
+- 桌面快捷方式正常；
+- 应用正常启动；
+- Empty 初始窗口与首次加载后的 Working 窗口正常；
+- adaptive resize、滚动和 compact status 正常；
+- 文件选择、metadata、thumbnail 正常；
+- MP4 conversion、WebM conversion、progress、cancel、success 正常；
+- 输出文件可以正常播放；
+- 系统 PATH 不依赖 ffmpeg / ffprobe；
+- packaged bundled FFmpeg 正常工作。
+
+结果：通过。
+
+### T64 v1.0.1 Web Installer online installation
+
+测试类型：Manual。
+
+结果：Pending。尚未创建对应 GitHub Release 或执行在线安装。
+
+### T65 Web Installer no-network / download failure behavior
+
+测试类型：Manual。
+
+结果：Pending。尚未进行无网络或 payload 下载失败场景测试。
+
+## 5. v1.0.1 最终 Release Candidate 产物记录
+
+以下为清除旧构建残留后，使用正式 npm scripts 重新生成并核验的 clean build 数据；本节属于构建与产物记录，不替代人工安装测试。
+
+### Offline Installer
+
+```text
+文件：desktop-video-converter-1.0.1-setup.exe
+大小：143,860,452 Bytes
+SHA-256：74625D0CDD23D44CFB330F238BCC5BA1FF43725DE8D2BB1BDE57484BA6237FCB
+```
+
+### Web Installer
+
+```text
+文件：desktop-video-converter-1.0.1-web-setup.exe
+大小：770,269 Bytes
+SHA-256：070A9E31A9D575F5DF5BE8368A605FB4A72DD9767F390E5900151046C35E398A
+```
+
+### Web application package
+
+```text
+文件：desktop-video-converter-1.0.1-x64.nsis.7z
+大小：143,367,781 Bytes
+SHA-256：C568E9532536CE2F0583387A1EB74EF437CF8ABFB96C5FB2271FBA311DEA242A
+```
+
+Web Installer 是约 `0.7346 MiB` 的 download / installation entry，不是完整应用大小。安装时需要下载约 `136.73 MiB` 的 `.nsis.7z` payload；安装后的应用仍包含 Electron runtime、`app.asar`、FFmpeg binary 和其他 application resources。
+
+截至本阶段，v1.0.1 payload 尚未上传 GitHub Release，因此没有执行 Web 在线安装、无网络安装或下载失败测试；没有 commit、push、tag、Release 或 publish。

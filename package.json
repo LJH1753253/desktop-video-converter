@@ -1,7 +1,7 @@
 {
   "name": "desktop-video-converter",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "",

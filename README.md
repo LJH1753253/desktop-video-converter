@@ -111,6 +111,12 @@ npm run build:unpack
 npm run build:win
 ```
 
+生成 Windows NSIS Web Installer：
+
+```bash
+npm run build:win:web
+```
+
 Windows packaged app 使用以下 bundled runtime：
 
 ```text
@@ -128,6 +134,22 @@ resources/ffmpeg/ffprobe.exe
 ```
 
 binary 来源应使用项目记录的 Gyan FFmpeg 9.0.2 essentials build。第三方来源、SHA256、能力验证和许可证信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。项目不包含自动下载脚本。
+
+### Windows 安装
+
+推荐使用 Online Installer：
+
+- 下载入口约 0.7 MiB；
+- 安装过程中需要联网获取完整应用；
+- 安装后的功能与 Offline Installer 完全一致。
+
+网络受限时可使用 Offline Installer：
+
+- 下载体积约 137 MiB；
+- 已包含完整应用 payload；
+- 安装阶段无需再联网获取应用包。
+
+两种安装包都已内置 FFmpeg / ffprobe，用户无需另外安装 FFmpeg，也无需配置系统 `PATH`。约 0.7 MiB 仅指 Online Installer 下载入口，不代表完整应用体积。当前 v1.0.1 release candidate 安装包尚未进行 Authenticode 商业签名，Windows 可能显示 Unknown Publisher 或 SmartScreen 提示。
 
 ## Windows 交付状态
 

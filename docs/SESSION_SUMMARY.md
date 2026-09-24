@@ -781,3 +781,123 @@ AI coding assistant 主要用于：
 - 工程文档整理。
 
 项目采用 developer-led、AI-assisted 的工程方式推进；AI 输出始终处于明确任务边界、依赖审批、diff review 和人工运行验收之下。
+
+## 21. Post-delivery Usability Review & Product Polish
+
+开发者主动邀请一名未参与开发流程的外部体验者，对已交付版本进行体验。这属于 external usability feedback，不是 formal user study，也不是 large-scale user testing。
+
+### 外部反馈与 UI 产品化优化
+
+外部体验发现部分界面状态下存在不必要滚动，Empty、Loaded 和 Success 状态所需空间不同，固定窗口尺寸不能很好覆盖状态变化。开发者认可该反馈并进行二次产品化优化。该问题不是原 UI 的基本功能错误，而是 internal correctness testing 后由外部体验暴露出的最大正常使用状态布局预算问题。
+
+最终方案包括：
+
+- Empty Mode 与 Working Mode；
+- 首次成功加载视频后只扩展窗口一次；
+- 基于当前 display work area 自适应并进行边界限制；
+- 用户提前手动 resize 时不强制覆盖；
+- compact success/error status；
+- 窄窗口下的响应式和 document scrolling fallback。
+
+当前源码中的窗口 sizing 参数为：
+
+- 初始宽度：`min(1000, floor(workAreaWidth * 0.72))`，并受 work area margin 约束；
+- Empty 高度：`min(550, floor(workAreaHeight * 0.76))`，并受 available height 约束；
+- Working 高度：`min(780, floor(workAreaHeight * 0.92))`，并受 available height 约束；
+- 最小窗口：宽度 `760`、高度 `520`（均不超过实际目标窗口尺寸）；
+- work area margin：每侧 `24px`；
+- Empty → Working 只自动 resize 一次；
+- 用户尺寸与默认 Empty 尺寸偏差不超过 `24px` 时才执行自动扩展。
+
+### 外部反馈与安装包体审计
+
+外部体验者认为安装包对于一个专用转换工具显得较大。开发者没有直接删除功能，而是进行了 package composition audit。审计确认业务 app payload 较小，主要体积来自 Electron runtime、bundled FFmpeg / ffprobe 和 Electron locales。
+
+### Electron locale 优化
+
+正式打包只保留：
+
+- `zh-CN`；
+- `en-US`。
+
+从此前旧 Offline Installer `149,944,621 Bytes / 142.998334 MiB` 到后续实际构建 `143,858,405 Bytes / 137.194066 MiB`，跨这两次实际构建观察到的净变化约为 `6.09 MB`（十进制）、`5.80 MiB`、`4.06%`。此前旧 build 与当前源码版本并非严格 same-source A/B，因此不能将全部变化归因于 locale 删除。
+
+### FFmpeg 体积审计与未实施方案
+
+开发者曾研究进一步裁剪 FFmpeg，当前 binary 实测为：
+
+- `ffmpeg.exe`：`105,423,872 Bytes`；
+- `ffprobe.exe`：`105,221,120 Bytes`；
+- unpacked 合计约 `200.96 MiB`。
+
+custom minimal FFmpeg 会增加 codec 输入兼容风险、Windows build toolchain、回归测试以及 GPL / external library distribution review 成本，因此开发者决定不为了 take-home 包体指标牺牲普通视频兼容性。
+
+System FFmpeg / Lite 方案也评估过但没有实施：它会把 FFmpeg 安装和 PATH 配置成本转嫁给用户，且 Electron / Chromium runtime 仍然较大，不符合默认“给人用”的产品目标。
+
+### NSIS Web Installer 决策
+
+最终采用 Offline Installer + NSIS Web Installer 双分发策略：不删除 FFmpeg、不要求用户安装 FFmpeg、不更换技术栈，使用 electron-builder 原生 `nsis-web`，不新增 downloader 或 npm dependency，并保持同一完整 application payload。Online / Offline 功能一致，Offline Installer 为网络受限环境保留。
+
+最近一次实际 Web 构建结果为：
+
+- Web Installer：`770,261 Bytes / 0.734578 MiB`；
+- application package：`143,365,904 Bytes / 136.724380 MiB`；
+- 相比 Offline Installer 的入口体积减少 `99.464570%`。
+
+Web Installer 优化的是 distribution entry size，不是 installed footprint。对应的固定 release 规划为 `v1.0.1`，预期 payload 为 `desktop-video-converter-1.0.1-x64.nsis.7z`；不使用 `latest/download`，以确保旧 installer 始终匹配自己的 package version。`.nsis.7z` 是 Web Installer backend asset，不面向用户手动安装。
+
+本阶段仅完成 v1.0.1 release preparation：未创建 GitHub Release、未 publish、未 tag、未 commit、未 push。
+
+## 22. Phase 5C：Offline Acceptance & Release Documentation
+
+开发者本人已完成 v1.0.1 Offline Installer 人工回归，测试对象为：
+
+```text
+dist/desktop-video-converter-1.0.1-setup.exe
+```
+
+人工确认通过：installer 安装、桌面快捷方式、应用启动、Empty / Working 窗口、adaptive resize、滚动、compact status、文件选择、metadata、thumbnail、MP4 / WebM conversion、progress、cancel、success、输出播放、bundled FFmpeg 和系统 PATH 独立性。
+
+### 最终截图
+
+开发者已使用最终 v1.0.1 UI 人工更新以下截图，文件名保持不变，README 原有引用路径继续有效：
+
+```text
+docs/screenshots/01-主界面-初始化.png
+docs/screenshots/02-主界面-已选中视频.png
+docs/screenshots/03-视频转换中.png
+docs/screenshots/04-转换成功.png
+docs/screenshots/05-友好错误状态.png
+```
+
+本阶段没有修改、重新生成、压缩或替换 `docs/screenshots/**`。
+
+### 最终 clean Release Candidate
+
+清除旧构建残留后，正式 v1.0.1 RC 产物为：
+
+- Offline Installer：`desktop-video-converter-1.0.1-setup.exe`，`143,860,452 Bytes`，SHA-256 `74625D0CDD23D44CFB330F238BCC5BA1FF43725DE8D2BB1BDE57484BA6237FCB`；
+- Web Installer：`desktop-video-converter-1.0.1-web-setup.exe`，`770,269 Bytes`，SHA-256 `070A9E31A9D575F5DF5BE8368A605FB4A72DD9767F390E5900151046C35E398A`；
+- Web application package：`desktop-video-converter-1.0.1-x64.nsis.7z`，`143,367,781 Bytes`，SHA-256 `C568E9532536CE2F0583387A1EB74EF437CF8ABFB96C5FB2271FBA311DEA242A`。
+
+Web Installer 是约 `0.7346 MiB` 的 download / installation entry，安装时下载约 `136.73 MiB` 的完整 payload；它不代表应用只有 0.7 MiB，也不减少 installed footprint。Online / Web 与 Offline 功能一致，都内置 FFmpeg / ffprobe，用户无需安装 FFmpeg 或配置 PATH。
+
+固定版本下载策略为：
+
+```text
+https://github.com/LJH1753253/desktop-video-converter/releases/download/v1.0.1/desktop-video-converter-1.0.1-x64.nsis.7z
+```
+
+不使用 `latest/download`，以确保 installer 与自身版本匹配。
+
+### 最终 RC 的包体审计与构建卫生
+
+package composition audit 保留了以下结论：业务 app payload 本身较小，主要体积来自 Electron / Chromium runtime、bundled FFmpeg / ffprobe 和 Electron locales。locale filtering 继续只保留 `zh-CN` 与 `en-US`。
+
+从旧 Offline Installer `149,944,621 Bytes / 142.998334 MiB` 到正式版本 `143,860,452 Bytes / 约 137.196 MiB`，两次实际 build 观察到约 `6.08 MB`（十进制）、`5.80 MiB`、`4.06%` 的净 installer 下降。这不是严格 same-source A/B，不能声称全部变化严格由 locale 删除产生。
+
+当前 FFmpeg binary 仍为：`ffmpeg.exe` `105,423,872 Bytes`、`ffprobe.exe` `105,221,120 Bytes`，合计约 `200.96 MiB` unpacked。进一步裁剪 custom minimal FFmpeg 会增加 codec 兼容性、Windows toolchain、回归测试和许可证审查风险，因此开发者决定不为 take-home 包体指标牺牲普通用户视频兼容性。Lite / System FFmpeg 方案也评估过但未实施，因为会转嫁 FFmpeg 安装和 PATH 配置成本，且 Electron runtime 仍然较大。
+
+发布前 RC 构建还发现仓库内隔离保存的旧 dist backup 可能被 electron-builder 重新计入 application package。这属于 release engineering / build hygiene issue，不是应用运行时 app.asar bug。处理过程包括识别包体异常、停用异常 artifact、隔离旧构建目录、处理旧 `app.asar` 文件锁、恢复预期 Git 状态、清理 dist，并使用正式 npm scripts 重新生成和核验 RC；最终 `app.asar` 稳定为 `2,658,378 Bytes`，FFmpeg 只保留在 bundled resource 路径。
+
+截至本阶段，T63 Offline Installer 人工回归为 Pass；T64 Web 在线安装和 T65 Web Installer 无网络 / 下载失败仍为 Pending，因为 v1.0.1 payload 尚未上传 GitHub Release。尚未 commit、push、tag、创建 Release 或 publish。
